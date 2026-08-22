@@ -21,8 +21,8 @@ function readMtoonxt(matDef: unknown): MtoonxtObject | null {
   if (matDef === null || typeof matDef !== 'object') {
     return null;
   }
-  const ext = (matDef as { extensions?: { VRMC_materials_mtoonxt?: unknown } }).extensions
-    ?.VRMC_materials_mtoonxt;
+  const ext = (matDef as { extensions?: { VRMXT_materials_mtoonxt?: unknown } }).extensions
+    ?.VRMXT_materials_mtoonxt;
   if (ext === null || typeof ext !== 'object') {
     return null;
   }

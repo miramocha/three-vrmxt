@@ -18,7 +18,7 @@ export async function tryAttach(gltf: GLTF): Promise<MtoonxtAttachResult> {
   const used = json.extensionsUsed ?? [];
   const result: MtoonxtAttachResult = { mtoonxtApplied: 0, mtoonxtSkipped: 0 };
 
-  if (used.includes('VRMC_materials_mtoonxt') && json.materials) {
+  if (used.includes('VRMXT_materials_mtoonxt') && json.materials) {
     const stats = await applyMtoonxtStencil(gltf);
     result.mtoonxtApplied = stats.applied;
     result.mtoonxtSkipped = stats.skipped;
