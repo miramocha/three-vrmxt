@@ -23,6 +23,111 @@
         align-items: center;
         flex-wrap: wrap;
       }
+      #lights {
+        position: absolute;
+        right: 12px;
+        top: 12px;
+        z-index: 1;
+        width: 240px;
+        max-height: calc(100% - 24px);
+        overflow: auto;
+        padding: 10px 12px;
+        background: rgba(26, 26, 30, 0.88);
+        border-radius: 6px;
+        font-size: 13px;
+      }
+      #lights h2 {
+        margin: 0 0 4px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      #lights details {
+        border-top: 1px solid #3a3a40;
+      }
+      #lights details:first-of-type {
+        border-top: 0;
+      }
+      #lights summary {
+        cursor: pointer;
+        font-weight: 600;
+        padding: 8px 0;
+        list-style: none;
+      }
+      #lights summary::-webkit-details-marker {
+        display: none;
+      }
+      #lights summary::before {
+        content: '▸ ';
+        opacity: 0.7;
+      }
+      #lights details[open] > summary::before {
+        content: '▾ ';
+      }
+      #lights .panel {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 0 0 10px;
+      }
+      #lights fieldset {
+        margin: 0;
+        padding: 0;
+        border: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      #lights fieldset:disabled {
+        opacity: 0.45;
+      }
+      .light-block > span {
+        display: block;
+        margin-bottom: 4px;
+        opacity: 0.9;
+      }
+      .light-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .light-row input[type='range'] {
+        flex: 1;
+        min-width: 0;
+      }
+      .light-row input[type='color'] {
+        width: 32px;
+        height: 24px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+      }
+      .light-row select {
+        flex: 1;
+        min-width: 0;
+        background: #333;
+        color: #eee;
+        border: 0;
+        border-radius: 4px;
+        padding: 4px 6px;
+      }
+      .check {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: none;
+        padding: 0;
+        font-weight: 400;
+      }
+      #lights button {
+        width: 100%;
+      }
+      .light-val {
+        width: 3.2em;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        opacity: 0.85;
+      }
       #status {
         font-size: 13px;
         opacity: 0.9;
@@ -51,6 +156,160 @@
       </label>
       <span id="status">Drop a .vrm here or open a file. View only.</span>
     </div>
+    <aside id="lights">
+      <h2>Lights</h2>
+      <details open>
+        <summary>Directional</summary>
+        <div class="panel">
+          <label class="check">
+            <input id="dir-enabled" type="checkbox" checked />
+            Enable directional
+          </label>
+          <fieldset id="dir-fields">
+          <div class="light-row">
+            <input id="dir-color" type="color" value="#ffffff" aria-label="Directional color" />
+            <input
+              id="dir-int"
+              type="range"
+              min="0"
+              max="4"
+              step="0.05"
+              value="1.1"
+              aria-label="Directional intensity"
+            />
+            <span id="dir-int-val" class="light-val">1.10</span>
+          </div>
+          <div class="light-block">
+            <span>Azimuth</span>
+            <div class="light-row">
+              <input
+                id="dir-az"
+                type="range"
+                min="0"
+                max="360"
+                step="1"
+                value="41"
+                aria-label="Directional azimuth"
+              />
+              <span id="dir-az-val" class="light-val">41°</span>
+            </div>
+          </div>
+          <div class="light-block">
+            <span>Elevation</span>
+            <div class="light-row">
+              <input
+                id="dir-el"
+                type="range"
+                min="5"
+                max="85"
+                step="1"
+                value="46"
+                aria-label="Directional elevation"
+              />
+              <span id="dir-el-val" class="light-val">46°</span>
+            </div>
+          </div>
+          <button id="dir-match" type="button">Match camera</button>
+          </fieldset>
+        </div>
+      </details>
+      <details>
+        <summary>Ambient</summary>
+        <div class="panel">
+          <div class="light-row">
+            <input id="amb-color" type="color" value="#ffffff" aria-label="Ambient color" />
+            <input
+              id="amb-int"
+              type="range"
+              min="0"
+              max="4"
+              step="0.05"
+              value="0.45"
+              aria-label="Ambient intensity"
+            />
+            <span id="amb-int-val" class="light-val">0.45</span>
+          </div>
+        </div>
+      </details>
+      <details>
+        <summary>Shadows</summary>
+        <div class="panel">
+          <label class="check">
+            <input id="sh-enabled" type="checkbox" checked />
+            Enable shadows
+          </label>
+          <fieldset id="sh-fields">
+            <label class="check">
+              <input id="sh-cast" type="checkbox" checked />
+              Cast on model
+            </label>
+            <label class="check">
+              <input id="sh-receive" type="checkbox" checked />
+              Receive on model
+            </label>
+            <label class="check">
+              <input id="sh-ground" type="checkbox" checked />
+              Ground
+            </label>
+            <div class="light-block">
+              <span>Shadow intensity</span>
+              <div class="light-row">
+                <input
+                  id="sh-int"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value="0.85"
+                  aria-label="Shadow intensity"
+                />
+                <span id="sh-int-val" class="light-val">0.85</span>
+              </div>
+            </div>
+            <div class="light-block">
+              <span>Bias</span>
+              <div class="light-row">
+                <input
+                  id="sh-bias"
+                  type="range"
+                  min="-0.005"
+                  max="0.005"
+                  step="0.0001"
+                  value="-0.0002"
+                  aria-label="Shadow bias"
+                />
+                <span id="sh-bias-val" class="light-val">-0.0002</span>
+              </div>
+            </div>
+            <div class="light-block">
+              <span>Normal bias</span>
+              <div class="light-row">
+                <input
+                  id="sh-nbias"
+                  type="range"
+                  min="0"
+                  max="0.1"
+                  step="0.005"
+                  value="0.02"
+                  aria-label="Shadow normal bias"
+                />
+                <span id="sh-nbias-val" class="light-val">0.02</span>
+              </div>
+            </div>
+            <div class="light-block">
+              <span>Map size</span>
+              <div class="light-row">
+                <select id="sh-map" aria-label="Shadow map size">
+                  <option value="512">512</option>
+                  <option value="1024" selected>1024</option>
+                  <option value="2048">2048</option>
+                </select>
+              </div>
+            </div>
+          </fieldset>
+        </div>
+      </details>
+    </aside>
     <canvas id="view"></canvas>
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -139,11 +139,9 @@ export async function applyMtoonxtStencil(gltf: GLTF): Promise<ApplyStats> {
         stats.skipped += 1;
       }
     }
-    const outlineExtra = resolveOutlineExtra(outlineParsed[i] ?? null, body);
-    const outlineKey = outlineExtra ? writerSetKey(outlineExtra, i) : null;
-    const outlineRef = outlineKey ? refs.get(outlineKey) : undefined;
-    applyOnMeshes(gltf.scene, mat, body, outlineExtra, outlineRef);
   }
+
+  applyStencilOnSceneGraph(gltf, defs, threeMaterials, bodyResolved, outlineParsed, refs);
 
   return stats;
 }
@@ -166,31 +164,102 @@ function isOutlineMaterial(material: THREE.Material): boolean {
   return (material as THREE.Material & { isOutline?: boolean }).isOutline === true;
 }
 
-function applyOnMeshes(
-  root: THREE.Object3D,
-  bodyMaterial: THREE.Material,
-  body: StencilExtra | null,
-  outlineExtra: StencilExtra | null,
-  outlineRef: number | undefined,
+type MaterialAssoc = { type?: string; index?: number };
+
+function resolveMaterialIndex(
+  parser: GLTF['parser'],
+  material: THREE.Material,
+  threeMaterials: THREE.Material[],
+  defs: unknown[],
+): number | null {
+  const assoc = parser.associations?.get(material) as MaterialAssoc | number | undefined;
+  if (typeof assoc === 'number' && assoc >= 0) {
+    return assoc;
+  }
+  if (assoc && typeof assoc === 'object' && typeof assoc.index === 'number') {
+    return assoc.index;
+  }
+  const direct = threeMaterials.indexOf(material);
+  if (direct >= 0) {
+    return direct;
+  }
+  let name = material.name;
+  const suffix = ' (Outline)';
+  if (name.endsWith(suffix)) {
+    name = name.slice(0, -suffix.length);
+  }
+  const byParser = threeMaterials.findIndex((m) => m.name === name);
+  if (byParser >= 0) {
+    return byParser;
+  }
+  const byDef = defs.findIndex((d) => (d as { name?: string }).name === name);
+  return byDef >= 0 ? byDef : null;
+}
+
+function applySlot(
+  slot: THREE.Material,
+  mesh: THREE.Mesh | null,
+  idx: number,
+  bodyResolved: Array<StencilExtra | null>,
+  outlineParsed: Array<StencilExtra | null>,
+  refs: Map<string, number>,
+): boolean {
+  const body = bodyResolved[idx] ?? null;
+  const outlineExtra = resolveOutlineExtra(outlineParsed[idx] ?? null, body);
+  const extra = isOutlineMaterial(slot) ? outlineExtra : body;
+  if (!extra) {
+    return false;
+  }
+  const key = writerSetKey(extra, idx);
+  const ref = key ? refs.get(key) : undefined;
+  if (ref === undefined) {
+    return false;
+  }
+  applyGpuOp(slot, extra, ref);
+  if (mesh && body && !isOutlineMaterial(slot)) {
+    mesh.renderOrder = renderOrderFor(body);
+  }
+  return true;
+}
+
+function applyStencilOnSceneGraph(
+  gltf: GLTF,
+  defs: unknown[],
+  threeMaterials: THREE.Material[],
+  bodyResolved: Array<StencilExtra | null>,
+  outlineParsed: Array<StencilExtra | null>,
+  refs: Map<string, number>,
 ): void {
-  root.traverse((obj) => {
+  const seen = new Set<THREE.Material>();
+
+  const consider = (slot: THREE.Material, mesh: THREE.Mesh | null) => {
+    if (seen.has(slot)) {
+      return;
+    }
+    const idx = resolveMaterialIndex(gltf.parser, slot, threeMaterials, defs);
+    if (idx === null) {
+      return;
+    }
+    if (applySlot(slot, mesh, idx, bodyResolved, outlineParsed, refs)) {
+      seen.add(slot);
+    }
+  };
+
+  gltf.scene.traverse((obj) => {
     const mesh = obj as THREE.Mesh;
     if (!mesh.isMesh) {
       return;
     }
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    if (!materials.includes(bodyMaterial)) {
-      return;
-    }
-    if (body) {
-      mesh.renderOrder = renderOrderFor(body);
-    }
-    if (outlineExtra && outlineRef !== undefined) {
-      for (const slot of materials) {
-        if (slot !== bodyMaterial && isOutlineMaterial(slot)) {
-          applyGpuOp(slot, outlineExtra, outlineRef);
-        }
-      }
+    for (const slot of materials) {
+      consider(slot, mesh);
     }
   });
+
+  const mtoon = gltf.userData.vrmMToonMaterials as THREE.Material[] | undefined;
+  if (mtoon) {
+    for (const slot of mtoon) {
+      consider(slot, null);
+    }
+  }
 }
