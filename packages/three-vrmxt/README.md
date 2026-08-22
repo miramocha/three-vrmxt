@@ -17,7 +17,9 @@ loader.register((parser) => new VRMXTLoaderPlugin(parser));
 
 After load you can also call `tryAttach(gltf)` if the plugin was omitted.
 
-Set `renderer.stencil = true` for `VRMC_materials_mtoonxt` coverage clip.
+Construct `WebGLRenderer` with `stencil: true` for `VRMC_materials_mtoonxt` coverage
+clip. Setting `renderer.stencil` after construct does not allocate the buffer
+(Three.js r163+).
 
 v1 applies body/outline stencil extras. Face SDF and `VRMXT_sprite_particle` are
 planned. Export/write is planned and not implemented.
