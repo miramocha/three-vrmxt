@@ -1,0 +1,41 @@
+# three-vrmxt
+
+Public repo: [miramocha/three-vrmxt](https://github.com/miramocha/three-vrmxt).
+
+Not a fork of [@pixiv/three-vrm](https://github.com/pixiv/three-vrm). Not pixiv “hooks.”
+This workspace ships an optional **peer** `GLTFLoader` plugin plus a first-party local-file viewer.
+
+| Path | Role | npm |
+|------|------|-----|
+| `packages/three-vrmxt` | VRMXT / MToonXT attach beside `VRMLoaderPlugin` | `@vrmxt/three-vrmxt` (publishable) |
+| `packages/viewer-core` | Canvas, orbit, load-from-bytes | not published |
+| `apps/viewer` | Vite host: file picker + drag-drop | not published |
+
+## Consumers
+
+```js
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { VRMLoaderPlugin } from '@pixiv/three-vrm';
+import { VRMXTLoaderPlugin } from '@vrmxt/three-vrmxt';
+
+const loader = new GLTFLoader();
+loader.register((parser) => new VRMLoaderPlugin(parser));
+loader.register((parser) => new VRMXTLoaderPlugin(parser));
+```
+
+Peers: `three`, `@pixiv/three-vrm`. Missing `VRMXT_*` / `VRMC_materials_mtoonxt` leaves stock VRM load intact.
+
+Enable stencil on the renderer (`renderer.stencil = true`) so MToonXT coverage clip can run.
+
+## Develop
+
+```bash
+pnpm install
+pnpm --filter @vrmxt/viewer-app dev
+```
+
+Hub browser extension and in-app edit/export are planned. They are not in v1.
+
+## Specs
+
+[Extended-VRM-Specs](https://github.com/miramocha/Extended-VRM-Specs) — `implementations/three-vrmxt.md`.
