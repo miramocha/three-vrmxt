@@ -23,7 +23,7 @@ loader.register((parser) => new VRMLoaderPlugin(parser));
 loader.register((parser) => new VRMXTLoaderPlugin(parser));
 ```
 
-Peers: `three`, `@pixiv/three-vrm`. Missing `VRMXT_*` / `VRMC_materials_mtoonxt` leaves stock VRM load intact.
+Peers: `three`, `@pixiv/three-vrm`. Missing `VRMXT_*` leaves stock VRM load intact.
 
 Construct `WebGLRenderer` with `stencil: true` so MToonXT coverage clip can run.
 Setting `renderer.stencil` after construct does not allocate the buffer (Three.js r163+).

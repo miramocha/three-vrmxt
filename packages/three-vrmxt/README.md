@@ -17,7 +17,7 @@ loader.register((parser) => new VRMXTLoaderPlugin(parser));
 
 After load you can also call `tryAttach(gltf)` if the plugin was omitted.
 
-Construct `WebGLRenderer` with `stencil: true` for `VRMC_materials_mtoonxt` coverage
+Construct `WebGLRenderer` with `stencil: true` for `VRMXT_materials_mtoonxt` coverage
 clip. Setting `renderer.stencil` after construct does not allocate the buffer
 (Three.js r163+).
 
