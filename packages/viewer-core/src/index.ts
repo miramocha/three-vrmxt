@@ -2,10 +2,11 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
-import { VRMXTLoaderPlugin, type MtoonxtAttachResult } from '@vrmxt/three-vrmxt';
+import { tryAttach, type MtoonxtAttachResult } from '@vrmxt/three-vrmxt';
 
 export type ViewerStatus = {
   name: string;
+  vrmxtEnabled: boolean;
   mtoonxtApplied: number;
   mtoonxtSkipped: number;
 };
@@ -36,6 +37,8 @@ export type VrmxtViewer = {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   loadBytes: (bytes: ArrayBuffer, name: string) => Promise<ViewerStatus>;
+  getVrmxtEnabled: () => boolean;
+  setVrmxtEnabled: (enabled: boolean) => Promise<ViewerStatus | null>;
   getLights: () => ViewerLights;
   setLights: (next: Partial<ViewerLights>) => ViewerLights;
   matchLightToCamera: () => ViewerLights;
@@ -117,6 +120,9 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
   const clock = new THREE.Clock();
   let current: THREE.Object3D | null = null;
   let vrmUpdate: ((delta: number) => void) | null = null;
+  let vrmxtEnabled = true;
+  let lastSource: { bytes: ArrayBuffer; name: string } | null = null;
+  let loadGen = 0;
 
   function getLights(): ViewerLights {
     return {
@@ -254,7 +260,6 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
 
   const loader = new GLTFLoader();
   loader.register((parser) => new VRMLoaderPlugin(parser));
-  loader.register((parser) => new VRMXTLoaderPlugin(parser));
 
   function resize(): void {
     const w = canvas.clientWidth || 800;
@@ -274,7 +279,12 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     renderer.render(scene, camera);
   });
 
-  async function loadBytes(bytes: ArrayBuffer, name: string): Promise<ViewerStatus> {
+  async function parseAndShow(
+    bytes: ArrayBuffer,
+    name: string,
+    frameCamera: boolean,
+  ): Promise<ViewerStatus> {
+    const gen = ++loadGen;
     if (current) {
       scene.remove(current);
       VRMUtils.deepDispose(current);
@@ -283,6 +293,18 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     }
 
     const gltf = await loader.parseAsync(bytes, '');
+    if (gen !== loadGen) {
+      VRMUtils.deepDispose(gltf.scene);
+      throw new Error('Load superseded');
+    }
+    if (vrmxtEnabled) {
+      await tryAttach(gltf);
+    }
+    if (gen !== loadGen) {
+      VRMUtils.deepDispose(gltf.scene);
+      throw new Error('Load superseded');
+    }
+
     const vrm = gltf.userData.vrm as VrmInstance | undefined;
     const root = vrm?.scene ?? gltf.scene;
     if (vrm) {
@@ -293,20 +315,43 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     current = root;
     applyModelShadowFlags(root);
 
-    const box = new THREE.Box3().setFromObject(root);
-    const size = box.getSize(new THREE.Vector3()).length() || 1;
-    const center = box.getCenter(new THREE.Vector3());
-    controls.target.copy(center);
-    camera.position.set(center.x, center.y + size * 0.15, center.z + size * 1.1);
-    controls.update();
+    if (frameCamera) {
+      const box = new THREE.Box3().setFromObject(root);
+      const size = box.getSize(new THREE.Vector3()).length() || 1;
+      const center = box.getCenter(new THREE.Vector3());
+      controls.target.copy(center);
+      camera.position.set(center.x, center.y + size * 0.15, center.z + size * 1.1);
+      controls.update();
+    }
     fitShadowCamera(root);
 
     const xt = gltf.userData.vrmxt as MtoonxtAttachResult | undefined;
     return {
       name,
+      vrmxtEnabled,
       mtoonxtApplied: xt?.mtoonxtApplied ?? 0,
       mtoonxtSkipped: xt?.mtoonxtSkipped ?? 0,
     };
+  }
+
+  async function loadBytes(bytes: ArrayBuffer, name: string): Promise<ViewerStatus> {
+    lastSource = { bytes: bytes.slice(0), name };
+    return parseAndShow(lastSource.bytes, name, true);
+  }
+
+  function getVrmxtEnabled(): boolean {
+    return vrmxtEnabled;
+  }
+
+  async function setVrmxtEnabled(enabled: boolean): Promise<ViewerStatus | null> {
+    if (vrmxtEnabled === enabled) {
+      return null;
+    }
+    vrmxtEnabled = enabled;
+    if (!lastSource) {
+      return null;
+    }
+    return parseAndShow(lastSource.bytes, lastSource.name, false);
   }
 
   function dispose(): void {
@@ -316,5 +361,18 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     renderer.dispose();
   }
 
-  return { renderer, scene, camera, loadBytes, getLights, setLights, matchLightToCamera, getShadows, setShadows, dispose };
+  return {
+    renderer,
+    scene,
+    camera,
+    loadBytes,
+    getVrmxtEnabled,
+    setVrmxtEnabled,
+    getLights,
+    setLights,
+    matchLightToCamera,
+    getShadows,
+    setShadows,
+    dispose,
+  };
 }

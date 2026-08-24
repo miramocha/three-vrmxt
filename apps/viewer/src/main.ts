@@ -1,8 +1,9 @@
-import { createVrmxtViewer, type ViewerShadows } from '@vrmxt/viewer-core';
+import { createVrmxtViewer, type ViewerShadows, type ViewerStatus } from '@vrmxt/viewer-core';
 
 const canvas = document.querySelector('#view') as HTMLCanvasElement;
 const statusEl = document.querySelector('#status') as HTMLElement;
 const fileEl = document.querySelector('#file') as HTMLInputElement;
+const vrmxtEnabledEl = document.querySelector('#vrmxt-enabled') as HTMLInputElement;
 const dirColorEl = document.querySelector('#dir-color') as HTMLInputElement;
 const dirEnabledEl = document.querySelector('#dir-enabled') as HTMLInputElement;
 const dirFieldsEl = document.querySelector('#dir-fields') as HTMLFieldSetElement;
@@ -29,6 +30,17 @@ const shNbiasEl = document.querySelector('#sh-nbias') as HTMLInputElement;
 const shNbiasValEl = document.querySelector('#sh-nbias-val') as HTMLElement;
 const shMapEl = document.querySelector('#sh-map') as HTMLSelectElement;
 const viewer = createVrmxtViewer(canvas);
+
+function isSuperseded(err: unknown): boolean {
+  return err instanceof Error && err.message === 'Load superseded';
+}
+
+function formatStatus(info: ViewerStatus): string {
+  if (!info.vrmxtEnabled) {
+    return `${info.name}  VRMXT off`;
+  }
+  return `${info.name}  MToonXT applied=${info.mtoonxtApplied} skipped=${info.mtoonxtSkipped}`;
+}
 
 function formatIntensity(value: number): string {
   return value.toFixed(2);
@@ -140,14 +152,41 @@ shMapEl.addEventListener('change', () => {
   viewer.setShadows({ mapSize });
 });
 syncLightUi();
+vrmxtEnabledEl.checked = viewer.getVrmxtEnabled();
+
+vrmxtEnabledEl.addEventListener('change', () => {
+  void (async () => {
+    const enabled = vrmxtEnabledEl.checked;
+    statusEl.textContent = enabled ? 'Applying VRMXT…' : 'Reloading without VRMXT…';
+    try {
+      const info = await viewer.setVrmxtEnabled(enabled);
+      if (info) {
+        statusEl.textContent = formatStatus(info);
+      } else {
+        statusEl.textContent = enabled
+          ? 'Drop a .vrm here or open a file. View only.'
+          : 'VRMXT off. Drop a .vrm here or open a file.';
+      }
+    } catch (err) {
+      if (isSuperseded(err)) {
+        return;
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      statusEl.textContent = `Load failed: ${message}`;
+    }
+  })();
+});
 
 async function loadFile(file: File): Promise<void> {
   statusEl.textContent = `Loading ${file.name}…`;
   try {
     const bytes = await file.arrayBuffer();
     const info = await viewer.loadBytes(bytes, file.name);
-    statusEl.textContent = `${info.name}  MToonXT applied=${info.mtoonxtApplied} skipped=${info.mtoonxtSkipped}`;
+    statusEl.textContent = formatStatus(info);
   } catch (err) {
+    if (isSuperseded(err)) {
+      return;
+    }
     const message = err instanceof Error ? err.message : String(err);
     statusEl.textContent = `Load failed: ${message}`;
   }
