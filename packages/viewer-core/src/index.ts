@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { ViewHelper } from 'three/addons/helpers/ViewHelper.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import {
   buildGlb,
@@ -68,6 +69,7 @@ export type VrmxtViewer = {
   getLights: () => ViewerLights;
   setLights: (next: Partial<ViewerLights>) => ViewerLights;
   matchLightToCamera: () => ViewerLights;
+  resetView: () => void;
   getShadows: () => ViewerShadows;
   setShadows: (next: Partial<ViewerShadows>) => ViewerShadows;
   getStencilMaterials: () => StencilMaterialRow[];
@@ -102,12 +104,105 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x1a1a1e);
 
+  const WORLD_UP = new THREE.Vector3(0, 1, 0);
+  const DEFAULT_POS = new THREE.Vector3(0, 1.3, 2.4);
+  const DEFAULT_TARGET = new THREE.Vector3(0, 1.0, 0);
+  const VIEW_HELPER_SIZE = 128;
+
   const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
-  camera.position.set(0, 1.3, 2.4);
+  camera.position.copy(DEFAULT_POS);
+  camera.up.copy(WORLD_UP);
 
   const controls = new OrbitControls(camera, canvas);
-  controls.target.set(0, 1.0, 0);
+  controls.target.copy(DEFAULT_TARGET);
   controls.update();
+
+  const framedPos = DEFAULT_POS.clone();
+  const framedTarget = DEFAULT_TARGET.clone();
+  const framedUp = WORLD_UP.clone();
+  let hasFramed = false;
+
+  function applyView(position: THREE.Vector3, target: THREE.Vector3, up: THREE.Vector3): void {
+    camera.up.copy(up);
+    camera.position.copy(position);
+    controls.target.copy(target);
+    controls.update();
+  }
+
+  function saveFramed(): void {
+    framedPos.copy(camera.position);
+    framedTarget.copy(controls.target);
+    framedUp.copy(camera.up);
+    hasFramed = true;
+  }
+
+  function frameObject(root: THREE.Object3D | null): void {
+    if (!root) {
+      applyView(DEFAULT_POS, DEFAULT_TARGET, WORLD_UP);
+      saveFramed();
+      return;
+    }
+    const box = new THREE.Box3().setFromObject(root);
+    const size = box.getSize(new THREE.Vector3()).length() || 1;
+    const center = box.getCenter(new THREE.Vector3());
+    applyView(
+      new THREE.Vector3(center.x, center.y + size * 0.15, center.z + size * 1.1),
+      center,
+      WORLD_UP,
+    );
+    saveFramed();
+  }
+
+  function resetView(): void {
+    if (hasFramed) {
+      applyView(framedPos, framedTarget, framedUp);
+      return;
+    }
+    frameObject(current);
+  }
+
+  const viewHelperHost = document.createElement('div');
+  viewHelperHost.setAttribute('aria-label', 'View axis');
+  viewHelperHost.style.cssText = [
+    'position:absolute',
+    'left:0',
+    'bottom:0',
+    `width:${VIEW_HELPER_SIZE}px`,
+    `height:${VIEW_HELPER_SIZE}px`,
+    'z-index:1',
+  ].join(';');
+  (canvas.parentElement ?? document.body).appendChild(viewHelperHost);
+
+  const viewHelper = new ViewHelper(camera, viewHelperHost);
+  viewHelper.center = controls.target;
+  viewHelper.setLabels('X', 'Y', 'Z');
+
+  function restoreOrbitIfIdle(): void {
+    if (!viewHelper.animating) {
+      controls.enabled = true;
+    }
+  }
+
+  function onHelperPointerDown(event: PointerEvent): void {
+    event.stopPropagation();
+    controls.enabled = false;
+    viewHelperHost.setPointerCapture(event.pointerId);
+  }
+
+  function onHelperPointerUp(event: PointerEvent): void {
+    event.stopPropagation();
+    viewHelper.handleClick(event);
+    restoreOrbitIfIdle();
+  }
+
+  function onHelperPointerCancel(): void {
+    restoreOrbitIfIdle();
+  }
+
+  viewHelperHost.addEventListener('pointerdown', onHelperPointerDown);
+  viewHelperHost.addEventListener('pointerup', onHelperPointerUp);
+  viewHelperHost.addEventListener('pointercancel', onHelperPointerCancel);
+  viewHelperHost.addEventListener('lostpointercapture', onHelperPointerCancel);
 
   const directional = new THREE.DirectionalLight(0xffffff, 1.1);
   directional.position.set(1.6, 2.8, 2.2);
@@ -312,8 +407,19 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
   renderer.setAnimationLoop(() => {
     const delta = clock.getDelta();
     vrmUpdate?.(delta);
-    controls.update();
+    if (viewHelper.animating) {
+      viewHelper.update(delta);
+      if (!viewHelper.animating) {
+        controls.enabled = true;
+      }
+    } else {
+      controls.update();
+    }
+    renderer.autoClear = true;
     renderer.render(scene, camera);
+    renderer.autoClear = false;
+    viewHelper.render(renderer);
+    renderer.autoClear = true;
   });
 
   async function yieldPaint(): Promise<void> {
@@ -368,12 +474,7 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     }
 
     if (frameCamera) {
-      const box = new THREE.Box3().setFromObject(root);
-      const size = box.getSize(new THREE.Vector3()).length() || 1;
-      const center = box.getCenter(new THREE.Vector3());
-      controls.target.copy(center);
-      camera.position.set(center.x, center.y + size * 0.15, center.z + size * 1.1);
-      controls.update();
+      frameObject(root);
     }
     fitShadowCamera(root);
 
@@ -519,6 +620,12 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
   function dispose(): void {
     renderer.setAnimationLoop(null);
     window.removeEventListener('resize', resize);
+    viewHelperHost.removeEventListener('pointerdown', onHelperPointerDown);
+    viewHelperHost.removeEventListener('pointerup', onHelperPointerUp);
+    viewHelperHost.removeEventListener('pointercancel', onHelperPointerCancel);
+    viewHelperHost.removeEventListener('lostpointercapture', onHelperPointerCancel);
+    viewHelperHost.remove();
+    viewHelper.dispose();
     controls.dispose();
     renderer.dispose();
   }
@@ -533,6 +640,7 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     getLights,
     setLights,
     matchLightToCamera,
+    resetView,
     getShadows,
     setShadows,
     getStencilMaterials,

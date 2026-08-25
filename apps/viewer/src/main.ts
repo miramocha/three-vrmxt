@@ -41,6 +41,7 @@ const shNbiasValEl = document.querySelector('#sh-nbias-val') as HTMLElement;
 const shMapEl = document.querySelector('#sh-map') as HTMLSelectElement;
 const stencilRootEl = document.querySelector('#stencil-root') as HTMLElement;
 const downloadEl = document.querySelector('#download') as HTMLButtonElement;
+const viewResetEl = document.querySelector('#view-reset') as HTMLButtonElement;
 const viewer = createVrmxtViewer(canvas);
 
 function isSuperseded(err: unknown): boolean {
@@ -166,6 +167,9 @@ dirElEl.addEventListener('input', () => {
 dirMatchEl.addEventListener('click', () => {
   viewer.matchLightToCamera();
   syncLightUi();
+});
+viewResetEl.addEventListener('click', () => {
+  viewer.resetView();
 });
 ambColorEl.addEventListener('input', () => {
   viewer.setLights({ ambientColor: ambColorEl.value });
