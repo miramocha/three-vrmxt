@@ -2,6 +2,7 @@ import {
   createVrmxtViewer,
   type StencilExtra,
   type StencilMaterialRow,
+  type ViewerAxis,
   type ViewerLoadStage,
   type ViewerShadows,
   type ViewerStatus,
@@ -41,6 +42,7 @@ const shNbiasValEl = document.querySelector('#sh-nbias-val') as HTMLElement;
 const shMapEl = document.querySelector('#sh-map') as HTMLSelectElement;
 const stencilRootEl = document.querySelector('#stencil-root') as HTMLElement;
 const downloadEl = document.querySelector('#download') as HTMLButtonElement;
+const viewResetEl = document.querySelector('#view-reset') as HTMLButtonElement;
 const viewer = createVrmxtViewer(canvas);
 
 function isSuperseded(err: unknown): boolean {
@@ -166,6 +168,14 @@ dirElEl.addEventListener('input', () => {
 dirMatchEl.addEventListener('click', () => {
   viewer.matchLightToCamera();
   syncLightUi();
+});
+viewResetEl.addEventListener('click', () => {
+  viewer.resetView();
+});
+document.querySelectorAll<HTMLButtonElement>('[data-axis]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    viewer.setAxisView(btn.dataset.axis as ViewerAxis);
+  });
 });
 ambColorEl.addEventListener('input', () => {
   viewer.setLights({ ambientColor: ambColorEl.value });

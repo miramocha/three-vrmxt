@@ -147,6 +147,140 @@
       #inspector button {
         width: 100%;
       }
+      /* Shaft + clip-path head: https://stackoverflow.com/q/78084061 */
+      .axis-gizmo {
+        --len: 48px;
+        --neg: 30px;
+        --thick: 3px;
+        --head: 11px;
+        --hit: 22px;
+        width: 128px;
+        height: 128px;
+        margin: 0 auto;
+        display: grid;
+        place-items: center;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 50%;
+      }
+      .axis-gizmo-scene {
+        position: relative;
+        width: 1px;
+        height: 1px;
+      }
+      .axis-origin {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 7px;
+        height: 7px;
+        margin: -3.5px 0 0 -3.5px;
+        border-radius: 50%;
+        background: #eee;
+        box-shadow: 0 0 0 2px #1a1a1e;
+        z-index: 4;
+        pointer-events: none;
+      }
+      .axis-arm {
+        position: absolute;
+        left: 0;
+        top: 0;
+        display: flex;
+        align-items: center;
+        width: var(--len);
+        height: var(--hit);
+        margin: 0;
+        padding: 0;
+        background: none;
+        border: 0;
+        border-radius: 0;
+        transform-origin: 0 50%;
+        color: var(--axis);
+      }
+      .axis-arm.neg {
+        width: var(--neg);
+        opacity: 0.4;
+        z-index: 1;
+      }
+      .axis-arm.pos {
+        z-index: 2;
+      }
+      .axis-x {
+        --axis: #e24a4a;
+      }
+      .axis-y {
+        --axis: #3dcc6e;
+      }
+      .axis-z {
+        --axis: #4a8cff;
+      }
+      .axis-x.pos {
+        transform: rotate(30deg);
+      }
+      .axis-x.neg {
+        transform: rotate(210deg);
+      }
+      .axis-y.pos {
+        transform: rotate(-90deg);
+      }
+      .axis-y.neg {
+        transform: rotate(90deg);
+      }
+      .axis-z.pos {
+        transform: rotate(150deg);
+      }
+      .axis-z.neg {
+        transform: rotate(-30deg);
+      }
+      .axis-shaft {
+        flex: 1;
+        height: var(--thick);
+        background: var(--axis);
+        border-radius: 1px;
+      }
+      .axis-head {
+        width: var(--head);
+        height: var(--head);
+        margin-left: -1px;
+        flex-shrink: 0;
+        background: var(--axis);
+        clip-path: polygon(0 0, 100% 50%, 0 100%);
+      }
+      .axis-lab {
+        position: absolute;
+        right: -13px;
+        top: 50%;
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 1;
+        pointer-events: none;
+      }
+      .axis-x.pos .axis-lab {
+        transform: translateY(-50%) rotate(-30deg);
+      }
+      .axis-y.pos .axis-lab {
+        transform: translateY(-50%) rotate(90deg);
+      }
+      .axis-z.pos .axis-lab {
+        transform: translateY(-50%) rotate(-150deg);
+      }
+      #inspector .axis-arm {
+        width: var(--len);
+        background: transparent;
+        padding: 0;
+        box-shadow: none;
+      }
+      #inspector .axis-arm.neg {
+        width: var(--neg);
+      }
+      #inspector .axis-arm:hover,
+      #inspector .axis-arm:focus-visible {
+        filter: brightness(1.25);
+        outline: none;
+      }
+      #inspector .axis-arm:focus-visible .axis-shaft,
+      #inspector .axis-arm:focus-visible .axis-head {
+        box-shadow: 0 0 0 1px #eee;
+      }
       .light-val {
         width: 3.2em;
         text-align: right;
@@ -239,6 +373,44 @@
     </div>
     <aside id="inspector">
       <h2>Inspector</h2>
+      <details open>
+        <summary>View</summary>
+        <div class="panel">
+          <button id="view-reset" type="button">Reset view</button>
+          <div class="axis-gizmo" role="group" aria-label="View axis">
+            <div class="axis-gizmo-scene">
+              <button type="button" class="axis-arm axis-x neg" data-axis="-x" aria-label="−X">
+                <span class="axis-shaft"></span>
+                <span class="axis-head"></span>
+              </button>
+              <button type="button" class="axis-arm axis-y neg" data-axis="-y" aria-label="−Y">
+                <span class="axis-shaft"></span>
+                <span class="axis-head"></span>
+              </button>
+              <button type="button" class="axis-arm axis-z neg" data-axis="-z" aria-label="−Z">
+                <span class="axis-shaft"></span>
+                <span class="axis-head"></span>
+              </button>
+              <button type="button" class="axis-arm axis-x pos" data-axis="+x" aria-label="+X">
+                <span class="axis-shaft"></span>
+                <span class="axis-head"></span>
+                <span class="axis-lab">X</span>
+              </button>
+              <button type="button" class="axis-arm axis-y pos" data-axis="+y" aria-label="+Y">
+                <span class="axis-shaft"></span>
+                <span class="axis-head"></span>
+                <span class="axis-lab">Y</span>
+              </button>
+              <button type="button" class="axis-arm axis-z pos" data-axis="+z" aria-label="+Z">
+                <span class="axis-shaft"></span>
+                <span class="axis-head"></span>
+                <span class="axis-lab">Z</span>
+              </button>
+              <span class="axis-origin" aria-hidden="true"></span>
+            </div>
+          </div>
+        </div>
+      </details>
       <details open>
         <summary>Lights</summary>
         <div class="panel">

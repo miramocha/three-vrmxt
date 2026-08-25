@@ -54,6 +54,8 @@ export type ViewerShadows = {
   mapSize: 512 | 1024 | 2048;
 };
 
+export type ViewerAxis = '+x' | '-x' | '+y' | '-y' | '+z' | '-z';
+
 export type VrmxtViewer = {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
@@ -68,6 +70,8 @@ export type VrmxtViewer = {
   getLights: () => ViewerLights;
   setLights: (next: Partial<ViewerLights>) => ViewerLights;
   matchLightToCamera: () => ViewerLights;
+  resetView: () => void;
+  setAxisView: (axis: ViewerAxis) => void;
   getShadows: () => ViewerShadows;
   setShadows: (next: Partial<ViewerShadows>) => ViewerShadows;
   getStencilMaterials: () => StencilMaterialRow[];
@@ -102,12 +106,85 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x1a1a1e);
 
+  const WORLD_UP = new THREE.Vector3(0, 1, 0);
+  const DEFAULT_POS = new THREE.Vector3(0, 1.3, 2.4);
+  const DEFAULT_TARGET = new THREE.Vector3(0, 1.0, 0);
+  const AXIS_DIR: Record<ViewerAxis, THREE.Vector3> = {
+    '+x': new THREE.Vector3(1, 0, 0),
+    '-x': new THREE.Vector3(-1, 0, 0),
+    '+y': new THREE.Vector3(0, 1, 0),
+    '-y': new THREE.Vector3(0, -1, 0),
+    '+z': new THREE.Vector3(0, 0, 1),
+    '-z': new THREE.Vector3(0, 0, -1),
+  };
+
   const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
-  camera.position.set(0, 1.3, 2.4);
+  camera.position.copy(DEFAULT_POS);
+  camera.up.copy(WORLD_UP);
 
   const controls = new OrbitControls(camera, canvas);
-  controls.target.set(0, 1.0, 0);
+  controls.target.copy(DEFAULT_TARGET);
   controls.update();
+
+  const framedPos = DEFAULT_POS.clone();
+  const framedTarget = DEFAULT_TARGET.clone();
+  const framedUp = WORLD_UP.clone();
+  let hasFramed = false;
+
+  function applyView(position: THREE.Vector3, target: THREE.Vector3, up: THREE.Vector3): void {
+    camera.up.copy(up);
+    camera.position.copy(position);
+    controls.target.copy(target);
+    controls.update();
+  }
+
+  function saveFramed(): void {
+    framedPos.copy(camera.position);
+    framedTarget.copy(controls.target);
+    framedUp.copy(camera.up);
+    hasFramed = true;
+  }
+
+  function frameObject(root: THREE.Object3D | null): void {
+    if (!root) {
+      applyView(DEFAULT_POS, DEFAULT_TARGET, WORLD_UP);
+      saveFramed();
+      return;
+    }
+    const box = new THREE.Box3().setFromObject(root);
+    const size = box.getSize(new THREE.Vector3()).length() || 1;
+    const center = box.getCenter(new THREE.Vector3());
+    applyView(
+      new THREE.Vector3(center.x, center.y + size * 0.15, center.z + size * 1.1),
+      center,
+      WORLD_UP,
+    );
+    saveFramed();
+  }
+
+  function resetView(): void {
+    if (hasFramed) {
+      applyView(framedPos, framedTarget, framedUp);
+      return;
+    }
+    frameObject(current);
+  }
+
+  function setAxisView(axis: ViewerAxis): void {
+    const target = controls.target.clone();
+    let dist = camera.position.distanceTo(target);
+    if (dist < 1e-4) {
+      dist = hasFramed ? framedPos.distanceTo(framedTarget) : DEFAULT_POS.distanceTo(DEFAULT_TARGET);
+    }
+    const pos = target.clone().addScaledVector(AXIS_DIR[axis], dist);
+    const up =
+      axis === '+y'
+        ? new THREE.Vector3(0, 0, -1)
+        : axis === '-y'
+          ? new THREE.Vector3(0, 0, 1)
+          : WORLD_UP;
+    applyView(pos, target, up);
+  }
 
   const directional = new THREE.DirectionalLight(0xffffff, 1.1);
   directional.position.set(1.6, 2.8, 2.2);
@@ -368,12 +445,7 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     }
 
     if (frameCamera) {
-      const box = new THREE.Box3().setFromObject(root);
-      const size = box.getSize(new THREE.Vector3()).length() || 1;
-      const center = box.getCenter(new THREE.Vector3());
-      controls.target.copy(center);
-      camera.position.set(center.x, center.y + size * 0.15, center.z + size * 1.1);
-      controls.update();
+      frameObject(root);
     }
     fitShadowCamera(root);
 
@@ -533,6 +605,8 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     getLights,
     setLights,
     matchLightToCamera,
+    resetView,
+    setAxisView,
     getShadows,
     setShadows,
     getStencilMaterials,
