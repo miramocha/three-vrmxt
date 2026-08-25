@@ -11,6 +11,12 @@ export type ViewerStatus = {
   mtoonxtSkipped: number;
 };
 
+export type ViewerLoadStage = 'parsing' | 'applying';
+
+export type ViewerLoadOptions = {
+  onStage?: (stage: ViewerLoadStage) => void;
+};
+
 export type ViewerLights = {
   directionalEnabled: boolean;
   directionalColor: string;
@@ -36,9 +42,13 @@ export type VrmxtViewer = {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
-  loadBytes: (bytes: ArrayBuffer, name: string) => Promise<ViewerStatus>;
+  loadBytes: (
+    bytes: ArrayBuffer,
+    name: string,
+    opts?: ViewerLoadOptions,
+  ) => Promise<ViewerStatus>;
   getVrmxtEnabled: () => boolean;
-  setVrmxtEnabled: (enabled: boolean) => Promise<ViewerStatus | null>;
+  setVrmxtEnabled: (enabled: boolean, opts?: ViewerLoadOptions) => Promise<ViewerStatus | null>;
   getLights: () => ViewerLights;
   setLights: (next: Partial<ViewerLights>) => ViewerLights;
   matchLightToCamera: () => ViewerLights;
@@ -279,25 +289,32 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     renderer.render(scene, camera);
   });
 
+  async function yieldPaint(): Promise<void> {
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => resolve());
+      });
+    });
+  }
+
   async function parseAndShow(
     bytes: ArrayBuffer,
     name: string,
     frameCamera: boolean,
-  ): Promise<ViewerStatus> {
+    attachXt: boolean,
+    onStage?: (stage: ViewerLoadStage) => void,
+  ): Promise<{ status: ViewerStatus; gen: number }> {
     const gen = ++loadGen;
-    if (current) {
-      scene.remove(current);
-      VRMUtils.deepDispose(current);
-      current = null;
-      vrmUpdate = null;
-    }
-
+    onStage?.('parsing');
+    await yieldPaint();
     const gltf = await loader.parseAsync(bytes, '');
     if (gen !== loadGen) {
       VRMUtils.deepDispose(gltf.scene);
       throw new Error('Load superseded');
     }
-    if (vrmxtEnabled) {
+    if (attachXt) {
+      onStage?.('applying');
+      await yieldPaint();
       await tryAttach(gltf);
     }
     if (gen !== loadGen) {
@@ -309,11 +326,18 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     const root = vrm?.scene ?? gltf.scene;
     if (vrm) {
       VRMUtils.rotateVRM0(vrm as never);
-      vrmUpdate = (d) => vrm.update(d);
     }
+
+    const old = current;
     scene.add(root);
     current = root;
+    vrmUpdate = vrm ? (d) => vrm.update(d) : null;
     applyModelShadowFlags(root);
+
+    if (old) {
+      scene.remove(old);
+      VRMUtils.deepDispose(old);
+    }
 
     if (frameCamera) {
       const box = new THREE.Box3().setFromObject(root);
@@ -327,31 +351,62 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
 
     const xt = gltf.userData.vrmxt as MtoonxtAttachResult | undefined;
     return {
-      name,
-      vrmxtEnabled,
-      mtoonxtApplied: xt?.mtoonxtApplied ?? 0,
-      mtoonxtSkipped: xt?.mtoonxtSkipped ?? 0,
+      gen,
+      status: {
+        name,
+        vrmxtEnabled: attachXt,
+        mtoonxtApplied: xt?.mtoonxtApplied ?? 0,
+        mtoonxtSkipped: xt?.mtoonxtSkipped ?? 0,
+      },
     };
   }
 
-  async function loadBytes(bytes: ArrayBuffer, name: string): Promise<ViewerStatus> {
-    lastSource = { bytes: bytes.slice(0), name };
-    return parseAndShow(lastSource.bytes, name, true);
+  function commitIfCurrent(gen: number): void {
+    if (gen !== loadGen) {
+      throw new Error('Load superseded');
+    }
+  }
+
+  async function loadBytes(
+    bytes: ArrayBuffer,
+    name: string,
+    opts?: ViewerLoadOptions,
+  ): Promise<ViewerStatus> {
+    const copy = bytes.slice(0);
+    const { status, gen } = await parseAndShow(
+      copy,
+      name,
+      true,
+      vrmxtEnabled,
+      opts?.onStage,
+    );
+    commitIfCurrent(gen);
+    lastSource = { bytes: copy, name };
+    return status;
   }
 
   function getVrmxtEnabled(): boolean {
     return vrmxtEnabled;
   }
 
-  async function setVrmxtEnabled(enabled: boolean): Promise<ViewerStatus | null> {
-    if (vrmxtEnabled === enabled) {
-      return null;
-    }
-    vrmxtEnabled = enabled;
+  async function setVrmxtEnabled(
+    enabled: boolean,
+    opts?: ViewerLoadOptions,
+  ): Promise<ViewerStatus | null> {
     if (!lastSource) {
+      vrmxtEnabled = enabled;
       return null;
     }
-    return parseAndShow(lastSource.bytes, lastSource.name, false);
+    const { status, gen } = await parseAndShow(
+      lastSource.bytes,
+      lastSource.name,
+      false,
+      enabled,
+      opts?.onStage,
+    );
+    commitIfCurrent(gen);
+    vrmxtEnabled = enabled;
+    return status;
   }
 
   function dispose(): void {

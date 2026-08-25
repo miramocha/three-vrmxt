@@ -1,7 +1,15 @@
-import { createVrmxtViewer, type ViewerShadows, type ViewerStatus } from '@vrmxt/viewer-core';
+import {
+  createVrmxtViewer,
+  type ViewerLoadStage,
+  type ViewerShadows,
+  type ViewerStatus,
+} from '@vrmxt/viewer-core';
 
 const canvas = document.querySelector('#view') as HTMLCanvasElement;
 const statusEl = document.querySelector('#status') as HTMLElement;
+const loadEl = document.querySelector('#load') as HTMLElement;
+const loadBarEl = document.querySelector('#load-bar') as HTMLProgressElement;
+const loadLabelEl = document.querySelector('#load-label') as HTMLElement;
 const fileEl = document.querySelector('#file') as HTMLInputElement;
 const vrmxtEnabledEl = document.querySelector('#vrmxt-enabled') as HTMLInputElement;
 const dirColorEl = document.querySelector('#dir-color') as HTMLInputElement;
@@ -40,6 +48,51 @@ function formatStatus(info: ViewerStatus): string {
     return `${info.name}  VRMXT off`;
   }
   return `${info.name}  MToonXT applied=${info.mtoonxtApplied} skipped=${info.mtoonxtSkipped}`;
+}
+
+function stageLabel(stage: 'reading' | ViewerLoadStage): string {
+  if (stage === 'reading') {
+    return 'Reading file…';
+  }
+  if (stage === 'parsing') {
+    return 'Parsing VRM…';
+  }
+  return 'Applying VRMXT…';
+}
+
+async function yieldPaint(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
+}
+
+let loadUiGen = 0;
+
+function showLoad(stepCount: number): number {
+  const gen = ++loadUiGen;
+  loadBarEl.max = stepCount;
+  loadBarEl.value = 0;
+  loadEl.classList.add('is-on');
+  statusEl.hidden = true;
+  return gen;
+}
+
+function setLoadStage(gen: number, stage: 'reading' | ViewerLoadStage, step: number): void {
+  if (gen !== loadUiGen) {
+    return;
+  }
+  loadBarEl.value = step;
+  loadLabelEl.textContent = stageLabel(stage);
+}
+
+function hideLoad(gen: number): void {
+  if (gen !== loadUiGen) {
+    return;
+  }
+  loadEl.classList.remove('is-on');
+  statusEl.hidden = false;
 }
 
 function formatIntensity(value: number): string {
@@ -154,20 +207,36 @@ shMapEl.addEventListener('change', () => {
 syncLightUi();
 vrmxtEnabledEl.checked = viewer.getVrmxtEnabled();
 
+function applyStatus(info: ViewerStatus): void {
+  vrmxtEnabledEl.checked = info.vrmxtEnabled;
+  statusEl.textContent = formatStatus(info);
+}
+
 vrmxtEnabledEl.addEventListener('change', () => {
   void (async () => {
     const enabled = vrmxtEnabledEl.checked;
-    statusEl.textContent = enabled ? 'Applying VRMXT…' : 'Reloading without VRMXT…';
+    const steps = enabled ? 2 : 1;
+    const uiGen = showLoad(steps);
+    setLoadStage(uiGen, 'parsing', 1);
+    await yieldPaint();
     try {
-      const info = await viewer.setVrmxtEnabled(enabled);
+      const info = await viewer.setVrmxtEnabled(enabled, {
+        onStage: (stage) => {
+          setLoadStage(uiGen, stage, stage === 'parsing' ? 1 : 2);
+        },
+      });
+      hideLoad(uiGen);
       if (info) {
-        statusEl.textContent = formatStatus(info);
+        applyStatus(info);
       } else {
-        statusEl.textContent = enabled
+        vrmxtEnabledEl.checked = viewer.getVrmxtEnabled();
+        statusEl.textContent = viewer.getVrmxtEnabled()
           ? 'Drop a .vrm here or open a file. View only.'
           : 'VRMXT off. Drop a .vrm here or open a file.';
       }
     } catch (err) {
+      hideLoad(uiGen);
+      vrmxtEnabledEl.checked = viewer.getVrmxtEnabled();
       if (isSuperseded(err)) {
         return;
       }
@@ -178,12 +247,23 @@ vrmxtEnabledEl.addEventListener('change', () => {
 });
 
 async function loadFile(file: File): Promise<void> {
-  statusEl.textContent = `Loading ${file.name}…`;
+  const applyXt = viewer.getVrmxtEnabled();
+  const steps = applyXt ? 3 : 2;
+  const uiGen = showLoad(steps);
+  setLoadStage(uiGen, 'reading', 1);
+  await yieldPaint();
   try {
     const bytes = await file.arrayBuffer();
-    const info = await viewer.loadBytes(bytes, file.name);
-    statusEl.textContent = formatStatus(info);
+    const info = await viewer.loadBytes(bytes, file.name, {
+      onStage: (stage) => {
+        setLoadStage(uiGen, stage, stage === 'parsing' ? 2 : 3);
+      },
+    });
+    hideLoad(uiGen);
+    applyStatus(info);
   } catch (err) {
+    hideLoad(uiGen);
+    vrmxtEnabledEl.checked = viewer.getVrmxtEnabled();
     if (isSuperseded(err)) {
       return;
     }

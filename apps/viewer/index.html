@@ -137,6 +137,34 @@
         font-size: 13px;
         opacity: 0.9;
       }
+      #load {
+        display: none;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+      }
+      #load.is-on {
+        display: flex;
+      }
+      .spinner {
+        width: 12px;
+        height: 12px;
+        border: 2px solid #555;
+        border-top-color: #eee;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        flex-shrink: 0;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      #load-bar {
+        width: 120px;
+        height: 8px;
+        accent-color: #9b8cff;
+      }
       canvas {
         display: block;
         width: 100%;
@@ -164,6 +192,11 @@
         Enable VRMXT
       </label>
       <span id="status">Drop a .vrm here or open a file. View only.</span>
+      <span id="load" aria-live="polite">
+        <span class="spinner" aria-hidden="true"></span>
+        <progress id="load-bar" max="3" value="0"></progress>
+        <span id="load-label"></span>
+      </span>
     </div>
     <aside id="lights">
       <h2>Lights</h2>
