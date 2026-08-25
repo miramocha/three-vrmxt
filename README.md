@@ -9,7 +9,7 @@ This workspace ships an optional **peer** `GLTFLoader` plugin plus a first-party
 |------|------|-----|
 | `packages/three-vrmxt` | VRMXT / MToonXT attach beside `VRMLoaderPlugin` | `@vrmxt/three-vrmxt` (publishable) |
 | `packages/viewer-core` | Canvas, orbit, load-from-bytes | not published |
-| `apps/viewer` | Vite host: file picker + drag-drop | not published |
+| `apps/viewer` | Vite host: file picker, drag-drop, MToonXT stencil inspector, Download VRM. Live: [GitHub Pages](https://miramocha.github.io/three-vrmxt/) | not published |
 
 ## Consumers
 
@@ -35,7 +35,12 @@ pnpm install
 pnpm --filter @vrmxt/viewer-app dev
 ```
 
-Hub browser extension and in-app edit/export are planned. They are not in v1.
+Hosted build: `https://miramocha.github.io/three-vrmxt/` (Actions on `main`). Local `dev` stays at `/`. Pages build sets `GITHUB_PAGES=1` so Vite `base` is `/three-vrmxt/`.
+
+First enable: repo **Settings → Pages → Source: GitHub Actions**.
+
+Hub browser extension is still planned. `apps/viewer` edits and exports MToonXT
+stencil (JSON patch). Other `VRMXT_*` extras stay later.
 
 ## Specs
 

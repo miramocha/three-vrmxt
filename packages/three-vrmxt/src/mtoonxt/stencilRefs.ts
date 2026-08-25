@@ -55,7 +55,7 @@ export function isUnresolvableBody(
   if (extra.op === 'write') {
     return extra.materials !== undefined;
   }
-  if (!extra.materials) {
+  if (!extra.materials || extra.materials.length === 0) {
     return true;
   }
   for (const w of extra.materials) {
@@ -86,7 +86,7 @@ export function isUnresolvableOutline(
   if (extra.op === 'write') {
     return extra.materials !== undefined;
   }
-  if (!extra.materials) {
+  if (!extra.materials || extra.materials.length === 0) {
     return true;
   }
   for (const w of extra.materials) {
