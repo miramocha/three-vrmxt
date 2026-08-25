@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { ViewHelper } from 'three/addons/helpers/ViewHelper.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import {
   buildGlb,
@@ -54,8 +55,6 @@ export type ViewerShadows = {
   mapSize: 512 | 1024 | 2048;
 };
 
-export type ViewerAxis = '+x' | '-x' | '+y' | '-y' | '+z' | '-z';
-
 export type VrmxtViewer = {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
@@ -71,7 +70,6 @@ export type VrmxtViewer = {
   setLights: (next: Partial<ViewerLights>) => ViewerLights;
   matchLightToCamera: () => ViewerLights;
   resetView: () => void;
-  setAxisView: (axis: ViewerAxis) => void;
   getShadows: () => ViewerShadows;
   setShadows: (next: Partial<ViewerShadows>) => ViewerShadows;
   getStencilMaterials: () => StencilMaterialRow[];
@@ -109,14 +107,7 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
   const WORLD_UP = new THREE.Vector3(0, 1, 0);
   const DEFAULT_POS = new THREE.Vector3(0, 1.3, 2.4);
   const DEFAULT_TARGET = new THREE.Vector3(0, 1.0, 0);
-  const AXIS_DIR: Record<ViewerAxis, THREE.Vector3> = {
-    '+x': new THREE.Vector3(1, 0, 0),
-    '-x': new THREE.Vector3(-1, 0, 0),
-    '+y': new THREE.Vector3(0, 1, 0),
-    '-y': new THREE.Vector3(0, -1, 0),
-    '+z': new THREE.Vector3(0, 0, 1),
-    '-z': new THREE.Vector3(0, 0, -1),
-  };
+  const VIEW_HELPER_SIZE = 128;
 
   const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
   camera.position.copy(DEFAULT_POS);
@@ -170,21 +161,37 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     frameObject(current);
   }
 
-  function setAxisView(axis: ViewerAxis): void {
-    const target = controls.target.clone();
-    let dist = camera.position.distanceTo(target);
-    if (dist < 1e-4) {
-      dist = hasFramed ? framedPos.distanceTo(framedTarget) : DEFAULT_POS.distanceTo(DEFAULT_TARGET);
-    }
-    const pos = target.clone().addScaledVector(AXIS_DIR[axis], dist);
-    const up =
-      axis === '+y'
-        ? new THREE.Vector3(0, 0, -1)
-        : axis === '-y'
-          ? new THREE.Vector3(0, 0, 1)
-          : WORLD_UP;
-    applyView(pos, target, up);
+  const viewHelperHost = document.createElement('div');
+  viewHelperHost.setAttribute('aria-label', 'View axis');
+  viewHelperHost.style.cssText = [
+    'position:absolute',
+    'left:0',
+    'bottom:0',
+    `width:${VIEW_HELPER_SIZE}px`,
+    `height:${VIEW_HELPER_SIZE}px`,
+    'z-index:1',
+  ].join(';');
+  (canvas.parentElement ?? document.body).appendChild(viewHelperHost);
+
+  const viewHelper = new ViewHelper(camera, viewHelperHost);
+  viewHelper.center = controls.target;
+  viewHelper.setLabels('X', 'Y', 'Z');
+
+  function onHelperPointerDown(event: PointerEvent): void {
+    event.stopPropagation();
+    controls.enabled = false;
   }
+
+  function onHelperPointerUp(event: PointerEvent): void {
+    event.stopPropagation();
+    viewHelper.handleClick(event);
+    if (!viewHelper.animating) {
+      controls.enabled = true;
+    }
+  }
+
+  viewHelperHost.addEventListener('pointerdown', onHelperPointerDown);
+  viewHelperHost.addEventListener('pointerup', onHelperPointerUp);
 
   const directional = new THREE.DirectionalLight(0xffffff, 1.1);
   directional.position.set(1.6, 2.8, 2.2);
@@ -389,8 +396,19 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
   renderer.setAnimationLoop(() => {
     const delta = clock.getDelta();
     vrmUpdate?.(delta);
-    controls.update();
+    if (viewHelper.animating) {
+      viewHelper.update(delta);
+      if (!viewHelper.animating) {
+        controls.enabled = true;
+      }
+    } else {
+      controls.update();
+    }
+    renderer.autoClear = true;
     renderer.render(scene, camera);
+    renderer.autoClear = false;
+    viewHelper.render(renderer);
+    renderer.autoClear = true;
   });
 
   async function yieldPaint(): Promise<void> {
@@ -591,6 +609,10 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
   function dispose(): void {
     renderer.setAnimationLoop(null);
     window.removeEventListener('resize', resize);
+    viewHelperHost.removeEventListener('pointerdown', onHelperPointerDown);
+    viewHelperHost.removeEventListener('pointerup', onHelperPointerUp);
+    viewHelperHost.remove();
+    viewHelper.dispose();
     controls.dispose();
     renderer.dispose();
   }
@@ -606,7 +628,6 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     setLights,
     matchLightToCamera,
     resetView,
-    setAxisView,
     getShadows,
     setShadows,
     getStencilMaterials,

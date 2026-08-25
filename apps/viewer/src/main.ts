@@ -2,7 +2,6 @@ import {
   createVrmxtViewer,
   type StencilExtra,
   type StencilMaterialRow,
-  type ViewerAxis,
   type ViewerLoadStage,
   type ViewerShadows,
   type ViewerStatus,
@@ -171,11 +170,6 @@ dirMatchEl.addEventListener('click', () => {
 });
 viewResetEl.addEventListener('click', () => {
   viewer.resetView();
-});
-document.querySelectorAll<HTMLButtonElement>('[data-axis]').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    viewer.setAxisView(btn.dataset.axis as ViewerAxis);
-  });
 });
 ambColorEl.addEventListener('input', () => {
   viewer.setLights({ ambientColor: ambColorEl.value });
