@@ -39,6 +39,10 @@ Hosted build: `https://miramocha.github.io/three-vrmxt/` (Actions on `main`). Lo
 
 First enable: repo **Settings → Pages → Source: GitHub Actions**.
 
+Viewer boots with `apps/viewer/public/stencil-cube.vrm`: cube face writers
+(Y front/back → sphere, X left/right → cone, Z top/bottom → torus). Drop
+another `.vrm` to replace it.
+
 Hub browser extension is still planned. `apps/viewer` edits and exports MToonXT
 stencil (JSON patch). Other `VRMXT_*` extras stay later.
 

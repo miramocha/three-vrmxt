@@ -394,15 +394,17 @@ vrmxtEnabledEl.addEventListener('change', () => {
   })();
 });
 
-async function loadFile(file: File): Promise<void> {
+const DEFAULT_VRM_URL = `${import.meta.env.BASE_URL}stencil-cube.vrm`;
+const DEFAULT_VRM_NAME = 'stencil-cube.vrm';
+
+async function loadBytesNamed(bytes: ArrayBuffer, name: string): Promise<void> {
   const applyXt = viewer.getVrmxtEnabled();
   const steps = applyXt ? 3 : 2;
   const uiGen = showLoad(steps);
   setLoadStage(uiGen, 'reading', 1);
   await yieldPaint();
   try {
-    const bytes = await file.arrayBuffer();
-    const info = await viewer.loadBytes(bytes, file.name, {
+    const info = await viewer.loadBytes(bytes, name, {
       onStage: (stage) => {
         setLoadStage(uiGen, stage, stage === 'parsing' ? 2 : 3);
       },
@@ -412,6 +414,26 @@ async function loadFile(file: File): Promise<void> {
   } catch (err) {
     hideLoad(uiGen);
     vrmxtEnabledEl.checked = viewer.getVrmxtEnabled();
+    if (isSuperseded(err)) {
+      return;
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    statusEl.textContent = `Load failed: ${message}`;
+  }
+}
+
+async function loadFile(file: File): Promise<void> {
+  await loadBytesNamed(await file.arrayBuffer(), file.name);
+}
+
+async function loadDefaultVrm(): Promise<void> {
+  try {
+    const res = await fetch(DEFAULT_VRM_URL);
+    if (!res.ok) {
+      throw new Error(`Default VRM HTTP ${res.status}`);
+    }
+    await loadBytesNamed(await res.arrayBuffer(), DEFAULT_VRM_NAME);
+  } catch (err) {
     if (isSuperseded(err)) {
       return;
     }
@@ -462,3 +484,4 @@ downloadEl.addEventListener('click', () => {
 });
 
 renderStencilPanel();
+void loadDefaultVrm();
