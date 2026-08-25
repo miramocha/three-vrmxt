@@ -1,8 +1,24 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
-import { tryAttach, type MtoonxtAttachResult } from '@vrmxt/three-vrmxt';
+import {
+  buildGlb,
+  cloneJson,
+  listStencilMaterials,
+  parseGlb,
+  resetMtoonxtStencil,
+  sanitizeMtoonxtStencils,
+  setMaterialStencilExtras,
+  tryAttach,
+  type GltfJson,
+  type MtoonxtAttachResult,
+  type StencilExtra,
+  type StencilMaterialRow,
+} from '@vrmxt/three-vrmxt';
+
+export type { StencilExtra, StencilMaterialRow };
 
 export type ViewerStatus = {
   name: string;
@@ -54,6 +70,15 @@ export type VrmxtViewer = {
   matchLightToCamera: () => ViewerLights;
   getShadows: () => ViewerShadows;
   setShadows: (next: Partial<ViewerShadows>) => ViewerShadows;
+  getStencilMaterials: () => StencilMaterialRow[];
+  setMaterialStencil: (
+    index: number,
+    body: StencilExtra | null,
+    outline: StencilExtra | null,
+  ) => Promise<ViewerStatus | null>;
+  canExportGlb: () => boolean;
+  exportGlb: () => ArrayBuffer | null;
+  getSourceName: () => string | null;
   dispose: () => void;
 };
 
@@ -129,6 +154,8 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
 
   const clock = new THREE.Clock();
   let current: THREE.Object3D | null = null;
+  let currentGltf: GLTF | null = null;
+  let glbBin: Uint8Array | null | undefined;
   let vrmUpdate: ((delta: number) => void) | null = null;
   let vrmxtEnabled = true;
   let lastSource: { bytes: ArrayBuffer; name: string } | null = null;
@@ -331,6 +358,7 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     const old = current;
     scene.add(root);
     current = root;
+    currentGltf = gltf;
     vrmUpdate = vrm ? (d) => vrm.update(d) : null;
     applyModelShadowFlags(root);
 
@@ -382,6 +410,8 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     );
     commitIfCurrent(gen);
     lastSource = { bytes: copy, name };
+    const parts = parseGlb(copy);
+    glbBin = parts ? parts.bin : undefined;
     return status;
   }
 
@@ -409,6 +439,83 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     return status;
   }
 
+  function attachStatus(name: string, attachXt: boolean, xt: MtoonxtAttachResult | undefined): ViewerStatus {
+    return {
+      name,
+      vrmxtEnabled: attachXt,
+      mtoonxtApplied: xt?.mtoonxtApplied ?? 0,
+      mtoonxtSkipped: xt?.mtoonxtSkipped ?? 0,
+    };
+  }
+
+  function gltfJson(): GltfJson | null {
+    if (!currentGltf) {
+      return null;
+    }
+    return currentGltf.parser.json as GltfJson;
+  }
+
+  function syncSourceBytes(): void {
+    if (!lastSource || !currentGltf || glbBin === undefined) {
+      return;
+    }
+    lastSource.bytes = buildGlb(currentGltf.parser.json, glbBin);
+  }
+
+  function getStencilMaterials(): StencilMaterialRow[] {
+    const json = gltfJson();
+    if (!json) {
+      return [];
+    }
+    return listStencilMaterials(json);
+  }
+
+  async function reapplyXt(name: string): Promise<ViewerStatus | null> {
+    if (!currentGltf || !lastSource) {
+      return null;
+    }
+    resetMtoonxtStencil(currentGltf);
+    let xt: MtoonxtAttachResult | undefined;
+    if (vrmxtEnabled) {
+      xt = await tryAttach(currentGltf);
+    }
+    return attachStatus(name, vrmxtEnabled, xt);
+  }
+
+  async function setMaterialStencil(
+    index: number,
+    body: StencilExtra | null,
+    outline: StencilExtra | null,
+  ): Promise<ViewerStatus | null> {
+    const json = gltfJson();
+    if (!json || !lastSource) {
+      return null;
+    }
+    if (!setMaterialStencilExtras(json, index, body, outline)) {
+      return null;
+    }
+    syncSourceBytes();
+    return reapplyXt(lastSource.name);
+  }
+
+  function canExportGlb(): boolean {
+    return lastSource !== null && currentGltf !== null && glbBin !== undefined;
+  }
+
+  function exportGlb(): ArrayBuffer | null {
+    const json = gltfJson();
+    if (!json || glbBin === undefined) {
+      return null;
+    }
+    const copy = cloneJson(json);
+    sanitizeMtoonxtStencils(copy);
+    return buildGlb(copy, glbBin);
+  }
+
+  function getSourceName(): string | null {
+    return lastSource?.name ?? null;
+  }
+
   function dispose(): void {
     renderer.setAnimationLoop(null);
     window.removeEventListener('resize', resize);
@@ -428,6 +535,11 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     matchLightToCamera,
     getShadows,
     setShadows,
+    getStencilMaterials,
+    setMaterialStencil,
+    canExportGlb,
+    exportGlb,
+    getSourceName,
     dispose,
   };
 }

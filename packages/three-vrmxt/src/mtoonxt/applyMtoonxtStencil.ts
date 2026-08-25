@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import {
+  snapshotMeshRenderOrder,
+  snapshotStencilMaterial,
+} from './resetMtoonxtStencil.js';
+import {
   assignStencilRefs,
   isUnresolvableBody,
   isUnresolvableOutline,
@@ -34,6 +38,7 @@ function applyGpuOp(
   extra: StencilExtra,
   ref: number,
 ): void {
+  snapshotStencilMaterial(material);
   material.stencilWrite = true;
   material.stencilFuncMask = 0xff;
   material.stencilWriteMask = 0xff;
@@ -217,6 +222,7 @@ function applySlot(
   }
   applyGpuOp(slot, extra, ref);
   if (mesh && body && !isOutlineMaterial(slot)) {
+    snapshotMeshRenderOrder(mesh);
     mesh.renderOrder = renderOrderFor(body);
   }
   return true;

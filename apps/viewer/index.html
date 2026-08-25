@@ -23,12 +23,12 @@
         align-items: center;
         flex-wrap: wrap;
       }
-      #lights {
+      #inspector {
         position: absolute;
         right: 12px;
         top: 12px;
         z-index: 1;
-        width: 240px;
+        width: 260px;
         max-height: calc(100% - 24px);
         overflow: auto;
         padding: 10px 12px;
@@ -36,40 +36,44 @@
         border-radius: 6px;
         font-size: 13px;
       }
-      #lights h2 {
+      #inspector h2 {
         margin: 0 0 4px;
         font-size: 13px;
         font-weight: 600;
       }
-      #lights details {
+      #inspector > details {
         border-top: 1px solid #3a3a40;
       }
-      #lights details:first-of-type {
+      #inspector > details:first-of-type {
         border-top: 0;
       }
-      #lights summary {
+      #inspector details details {
+        border-top: 1px solid #3a3a40;
+        margin-left: 4px;
+      }
+      #inspector summary {
         cursor: pointer;
         font-weight: 600;
         padding: 8px 0;
         list-style: none;
       }
-      #lights summary::-webkit-details-marker {
+      #inspector summary::-webkit-details-marker {
         display: none;
       }
-      #lights summary::before {
+      #inspector summary::before {
         content: '▸ ';
         opacity: 0.7;
       }
-      #lights details[open] > summary::before {
+      #inspector details[open] > summary::before {
         content: '▾ ';
       }
-      #lights .panel {
+      #inspector .panel {
         display: flex;
         flex-direction: column;
         gap: 8px;
         padding: 0 0 10px;
       }
-      #lights fieldset {
+      #inspector fieldset {
         margin: 0;
         padding: 0;
         border: 0;
@@ -77,8 +81,29 @@
         flex-direction: column;
         gap: 8px;
       }
-      #lights fieldset:disabled {
+      #inspector fieldset:disabled {
         opacity: 0.45;
+      }
+      #inspector .warn {
+        color: #f0c36d;
+        font-size: 12px;
+      }
+      #inspector .muted {
+        opacity: 0.7;
+        font-size: 12px;
+      }
+      #inspector select {
+        width: 100%;
+        background: #333;
+        color: #eee;
+        border: 0;
+        border-radius: 4px;
+        padding: 4px 6px;
+      }
+      #inspector .writers {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
       }
       .light-block > span {
         display: block;
@@ -119,7 +144,7 @@
         padding: 0;
         font-weight: 400;
       }
-      #lights button {
+      #inspector button {
         width: 100%;
       }
       .light-val {
@@ -178,6 +203,19 @@
         padding: 6px 10px;
         border-radius: 4px;
         cursor: pointer;
+        font: inherit;
+        line-height: 1.25;
+        box-sizing: border-box;
+      }
+      #hud > button,
+      #hud > label:not(.check) {
+        display: inline-flex;
+        align-items: center;
+        min-height: 32px;
+      }
+      #hud > button:disabled {
+        cursor: default;
+        opacity: 0.45;
       }
     </style>
   </head>
@@ -187,19 +225,23 @@
         Open VRM…
         <input id="file" type="file" accept=".vrm,.glb,.gltf" hidden />
       </label>
+      <button id="download" type="button" disabled>Download VRM</button>
       <label class="check">
         <input id="vrmxt-enabled" type="checkbox" checked />
         Enable VRMXT
       </label>
-      <span id="status">Drop a .vrm here or open a file. View only.</span>
+      <span id="status">Drop a .vrm here or open a file.</span>
       <span id="load" aria-live="polite">
         <span class="spinner" aria-hidden="true"></span>
         <progress id="load-bar" max="3" value="0"></progress>
         <span id="load-label"></span>
       </span>
     </div>
-    <aside id="lights">
-      <h2>Lights</h2>
+    <aside id="inspector">
+      <h2>Inspector</h2>
+      <details open>
+        <summary>Lights</summary>
+        <div class="panel">
       <details open>
         <summary>Directional</summary>
         <div class="panel">
@@ -349,6 +391,14 @@
               </div>
             </div>
           </fieldset>
+        </div>
+      </details>
+        </div>
+      </details>
+      <details open>
+        <summary>MToonXT stencil</summary>
+        <div class="panel">
+          <div id="stencil-root" class="muted">Load a VRM to edit stencil extras.</div>
         </div>
       </details>
     </aside>

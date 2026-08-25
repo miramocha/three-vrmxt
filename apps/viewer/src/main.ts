@@ -1,5 +1,7 @@
 import {
   createVrmxtViewer,
+  type StencilExtra,
+  type StencilMaterialRow,
   type ViewerLoadStage,
   type ViewerShadows,
   type ViewerStatus,
@@ -37,6 +39,8 @@ const shBiasValEl = document.querySelector('#sh-bias-val') as HTMLElement;
 const shNbiasEl = document.querySelector('#sh-nbias') as HTMLInputElement;
 const shNbiasValEl = document.querySelector('#sh-nbias-val') as HTMLElement;
 const shMapEl = document.querySelector('#sh-map') as HTMLSelectElement;
+const stencilRootEl = document.querySelector('#stencil-root') as HTMLElement;
+const downloadEl = document.querySelector('#download') as HTMLButtonElement;
 const viewer = createVrmxtViewer(canvas);
 
 function isSuperseded(err: unknown): boolean {
@@ -207,9 +211,153 @@ shMapEl.addEventListener('change', () => {
 syncLightUi();
 vrmxtEnabledEl.checked = viewer.getVrmxtEnabled();
 
+const CLIP_OPS = new Set(['inside', 'insideOverlay', 'outside']);
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function extraFromControls(
+  op: string,
+  writerChecks: NodeListOf<HTMLInputElement>,
+): StencilExtra | null {
+  if (!op || op === 'none') {
+    return null;
+  }
+  if (op === 'write' || op === 'same') {
+    return { op };
+  }
+  const materials = Array.from(writerChecks)
+    .filter((el) => el.checked)
+    .map((el) => Number(el.value));
+  return { op: op as StencilExtra['op'], materials };
+}
+
+function opOptions(kind: 'body' | 'outline', current: string): string {
+  const ops =
+    kind === 'body'
+      ? ['none', 'write', 'inside', 'insideOverlay', 'outside']
+      : ['none', 'same', 'write', 'inside', 'insideOverlay', 'outside'];
+  return ops
+    .map((op) => {
+      const label =
+        op === 'insideOverlay' ? 'inside overlay' : op === 'none' ? 'none' : op;
+      const selected = op === current ? ' selected' : '';
+      return `<option value="${op}"${selected}>${label}</option>`;
+    })
+    .join('');
+}
+
+function writerBoxes(
+  prefix: string,
+  row: StencilMaterialRow,
+  rows: StencilMaterialRow[],
+  selected: number[] | undefined,
+  visible: boolean,
+): string {
+  if (!visible) {
+    return '';
+  }
+  const boxes = rows
+    .filter((other) => other.hasMtoon && other.index !== row.index)
+    .map((other) => {
+      const checked = selected?.includes(other.index) ? ' checked' : '';
+      return `<label class="check"><input type="checkbox" data-role="${prefix}" value="${other.index}"${checked} /> ${escapeHtml(other.name)}</label>`;
+    })
+    .join('');
+  return `<div class="writers"><span>Clip against writers</span>${boxes || '<span class="muted">No other MToon materials</span>'}</div>`;
+}
+
+function openMaterialIndices(): Set<number> {
+  const open = new Set<number>();
+  stencilRootEl.querySelectorAll('details[data-index][open]').forEach((el) => {
+    open.add(Number((el as HTMLElement).dataset.index));
+  });
+  return open;
+}
+
+function exportFileName(name: string): string {
+  return `${name.replace(/\.(vrm|glb|gltf)$/i, '')}-vrmxt.vrm`;
+}
+
+function syncDownload(): void {
+  downloadEl.disabled = !viewer.canExportGlb();
+}
+
+function renderStencilPanel(): void {
+  const rows = viewer.getStencilMaterials();
+  syncDownload();
+  if (rows.length === 0) {
+    stencilRootEl.innerHTML = '<span class="muted">Load a VRM to edit stencil extras.</span>';
+    return;
+  }
+  const open = openMaterialIndices();
+  stencilRootEl.innerHTML = rows
+    .map((row) => {
+      const isOpen = open.has(row.index) ? ' open' : '';
+      if (!row.hasMtoon) {
+        return `<details data-index="${row.index}"${isOpen}><summary>${escapeHtml(row.name)}</summary><p class="muted">No VRMC_materials_mtoon sibling.</p></details>`;
+      }
+      const bodyOp = row.body?.op ?? 'none';
+      const outlineOp = row.outline?.op ?? 'none';
+      const warns: string[] = [];
+      if (row.bodyUnresolvable) {
+        warns.push('Body clip is not resolvable (needs body write writers).');
+      }
+      if (row.outlineUnresolvable) {
+        warns.push('Outline clip is not resolvable.');
+      }
+      return `<details data-index="${row.index}"${isOpen}>
+        <summary>${escapeHtml(row.name)}</summary>
+        <div class="panel">
+          <label>Body
+            <select data-role="body-op">${opOptions('body', bodyOp)}</select>
+          </label>
+          ${writerBoxes('body-writer', row, rows, row.body?.materials, CLIP_OPS.has(bodyOp))}
+          <label>Outline
+            <select data-role="outline-op">${opOptions('outline', outlineOp)}</select>
+          </label>
+          ${writerBoxes('outline-writer', row, rows, row.outline?.materials, CLIP_OPS.has(outlineOp))}
+          ${warns.map((w) => `<p class="warn">${w}</p>`).join('')}
+        </div>
+      </details>`;
+    })
+    .join('');
+}
+
+async function commitMaterial(details: HTMLDetailsElement): Promise<void> {
+  const index = Number(details.dataset.index);
+  const bodyOp = (details.querySelector('[data-role="body-op"]') as HTMLSelectElement | null)
+    ?.value;
+  const outlineOp = (details.querySelector('[data-role="outline-op"]') as HTMLSelectElement | null)
+    ?.value;
+  if (!bodyOp || !outlineOp) {
+    return;
+  }
+  const body = extraFromControls(
+    bodyOp,
+    details.querySelectorAll('[data-role="body-writer"]'),
+  );
+  const outline = extraFromControls(
+    outlineOp,
+    details.querySelectorAll('[data-role="outline-writer"]'),
+  );
+  const info = await viewer.setMaterialStencil(index, body, outline);
+  if (info) {
+    applyStatus(info);
+  } else {
+    renderStencilPanel();
+  }
+}
+
 function applyStatus(info: ViewerStatus): void {
   vrmxtEnabledEl.checked = info.vrmxtEnabled;
   statusEl.textContent = formatStatus(info);
+  renderStencilPanel();
 }
 
 vrmxtEnabledEl.addEventListener('change', () => {
@@ -231,7 +379,7 @@ vrmxtEnabledEl.addEventListener('change', () => {
       } else {
         vrmxtEnabledEl.checked = viewer.getVrmxtEnabled();
         statusEl.textContent = viewer.getVrmxtEnabled()
-          ? 'Drop a .vrm here or open a file. View only.'
+          ? 'Drop a .vrm here or open a file.'
           : 'VRMXT off. Drop a .vrm here or open a file.';
       }
     } catch (err) {
@@ -289,3 +437,28 @@ document.body.addEventListener('drop', (e) => {
     void loadFile(file);
   }
 });
+
+stencilRootEl.addEventListener('change', (e) => {
+  const target = e.target as HTMLElement;
+  const details = target.closest('details[data-index]') as HTMLDetailsElement | null;
+  if (details) {
+    void commitMaterial(details);
+  }
+});
+
+downloadEl.addEventListener('click', () => {
+  const bytes = viewer.exportGlb();
+  const name = viewer.getSourceName();
+  if (!bytes || !name) {
+    return;
+  }
+  const blob = new Blob([new Uint8Array(bytes)], { type: 'model/gltf-binary' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = exportFileName(name);
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+renderStencilPanel();
