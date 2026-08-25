@@ -177,21 +177,32 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
   viewHelper.center = controls.target;
   viewHelper.setLabels('X', 'Y', 'Z');
 
-  function onHelperPointerDown(event: PointerEvent): void {
-    event.stopPropagation();
-    controls.enabled = false;
-  }
-
-  function onHelperPointerUp(event: PointerEvent): void {
-    event.stopPropagation();
-    viewHelper.handleClick(event);
+  function restoreOrbitIfIdle(): void {
     if (!viewHelper.animating) {
       controls.enabled = true;
     }
   }
 
+  function onHelperPointerDown(event: PointerEvent): void {
+    event.stopPropagation();
+    controls.enabled = false;
+    viewHelperHost.setPointerCapture(event.pointerId);
+  }
+
+  function onHelperPointerUp(event: PointerEvent): void {
+    event.stopPropagation();
+    viewHelper.handleClick(event);
+    restoreOrbitIfIdle();
+  }
+
+  function onHelperPointerCancel(): void {
+    restoreOrbitIfIdle();
+  }
+
   viewHelperHost.addEventListener('pointerdown', onHelperPointerDown);
   viewHelperHost.addEventListener('pointerup', onHelperPointerUp);
+  viewHelperHost.addEventListener('pointercancel', onHelperPointerCancel);
+  viewHelperHost.addEventListener('lostpointercapture', onHelperPointerCancel);
 
   const directional = new THREE.DirectionalLight(0xffffff, 1.1);
   directional.position.set(1.6, 2.8, 2.2);
@@ -611,6 +622,8 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     window.removeEventListener('resize', resize);
     viewHelperHost.removeEventListener('pointerdown', onHelperPointerDown);
     viewHelperHost.removeEventListener('pointerup', onHelperPointerUp);
+    viewHelperHost.removeEventListener('pointercancel', onHelperPointerCancel);
+    viewHelperHost.removeEventListener('lostpointercapture', onHelperPointerCancel);
     viewHelperHost.remove();
     viewHelper.dispose();
     controls.dispose();
