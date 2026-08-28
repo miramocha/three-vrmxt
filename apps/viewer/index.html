@@ -92,13 +92,24 @@
         opacity: 0.7;
         font-size: 12px;
       }
-      #inspector select {
+      #inspector input[type='number'],
+      #inspector input[type='text'] {
         width: 100%;
         background: #333;
         color: #eee;
         border: 0;
         border-radius: 4px;
         padding: 4px 6px;
+      }
+      #inspector .panel > label {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      #inspector .row-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
       }
       #inspector .writers {
         display: flex;
@@ -399,6 +410,13 @@
           </fieldset>
         </div>
       </details>
+        </div>
+      </details>
+      <details open>
+        <summary>Sprite particles</summary>
+        <div class="panel">
+          <div id="particle-root" class="muted">Load a VRM to edit sprite particles.</div>
+          <button id="particle-add" type="button">Add emitter</button>
         </div>
       </details>
       <details open>

@@ -40,6 +40,8 @@ const shNbiasEl = document.querySelector('#sh-nbias') as HTMLInputElement;
 const shNbiasValEl = document.querySelector('#sh-nbias-val') as HTMLElement;
 const shMapEl = document.querySelector('#sh-map') as HTMLSelectElement;
 const stencilRootEl = document.querySelector('#stencil-root') as HTMLElement;
+const particleRootEl = document.querySelector('#particle-root') as HTMLElement;
+const particleAddEl = document.querySelector('#particle-add') as HTMLButtonElement;
 const downloadEl = document.querySelector('#download') as HTMLButtonElement;
 const viewResetEl = document.querySelector('#view-reset') as HTMLButtonElement;
 const viewer = createVrmxtViewer(canvas);
@@ -52,7 +54,7 @@ function formatStatus(info: ViewerStatus): string {
   if (!info.vrmxtEnabled) {
     return `${info.name}  VRMXT off`;
   }
-  return `${info.name}  MToonXT applied=${info.mtoonxtApplied} skipped=${info.mtoonxtSkipped}`;
+  return `${info.name}  MToonXT applied=${info.mtoonxtApplied} skipped=${info.mtoonxtSkipped}  particles applied=${info.spriteParticleApplied} skipped=${info.spriteParticleSkipped}`;
 }
 
 function stageLabel(stage: 'reading' | ViewerLoadStage): string {
@@ -292,6 +294,169 @@ function syncDownload(): void {
   downloadEl.disabled = !viewer.canExportGlb();
 }
 
+function openParticleIndices(): Set<number> {
+  const open = new Set<number>();
+  particleRootEl.querySelectorAll('details[data-particle-index][open]').forEach((el) => {
+    open.add(Number((el as HTMLElement).dataset.particleIndex));
+  });
+  return open;
+}
+
+function hexFromRgb(r: number, g: number, b: number): string {
+  const byte = (n: number) =>
+    Math.round(Math.min(1, Math.max(0, n)) * 255)
+      .toString(16)
+      .padStart(2, '0');
+  return `#${byte(r)}${byte(g)}${byte(b)}`;
+}
+
+function rgbFromHex(hex: string): [number, number, number] {
+  const raw = hex.replace('#', '');
+  return [
+    Number.parseInt(raw.slice(0, 2), 16) / 255,
+    Number.parseInt(raw.slice(2, 4), 16) / 255,
+    Number.parseInt(raw.slice(4, 6), 16) / 255,
+  ];
+}
+
+function nodeOptions(selected: number): string {
+  return viewer
+    .getGltfNodes()
+    .map((node) => {
+      const sel = node.index === selected ? ' selected' : '';
+      return `<option value="${node.index}"${sel}>${escapeHtml(node.name)}</option>`;
+    })
+    .join('');
+}
+
+function textureOptions(selected: number | undefined): string {
+  const none = selected === undefined ? ' selected' : '';
+  const opts = [`<option value=""${none}>None</option>`];
+  for (const tex of viewer.getGltfTextures()) {
+    const sel = selected === tex.index ? ' selected' : '';
+    opts.push(`<option value="${tex.index}"${sel}>${escapeHtml(tex.name)}</option>`);
+  }
+  return opts.join('');
+}
+
+function renderParticlePanel(): void {
+  const rows = viewer.getSpriteParticleEmitters();
+  syncDownload();
+  particleAddEl.disabled = viewer.getGltfNodes().length === 0;
+  if (rows.length === 0) {
+    particleRootEl.innerHTML =
+      '<span class="muted">No sprite particle emitters. Add one or load a VRM that has them.</span>';
+    return;
+  }
+  const open = openParticleIndices();
+  particleRootEl.innerHTML = rows
+    .map((row) => {
+      const isOpen = open.has(row.index) ? ' open' : '';
+      const hex = hexFromRgb(row.color[0], row.color[1], row.color[2]);
+      return `<details data-particle-index="${row.index}"${isOpen}>
+        <summary>${escapeHtml(row.name ?? `Emitter ${row.index}`)}</summary>
+        <div class="panel">
+          <label>Name
+            <input type="text" data-role="p-name" value="${escapeHtml(row.name ?? '')}" />
+          </label>
+          <label>Node
+            <select data-role="p-node">${nodeOptions(row.node)}</select>
+          </label>
+          <label>Texture
+            <select data-role="p-texture">${textureOptions(row.texture)}</select>
+          </label>
+          <label class="check">
+            Pack image…
+            <input type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" hidden data-role="p-pack" />
+          </label>
+          <div class="row-2">
+            <label>Width
+              <input type="number" min="0.001" step="0.01" data-role="p-w" value="${row.size[0]}" />
+            </label>
+            <label>Height
+              <input type="number" min="0.001" step="0.01" data-role="p-h" value="${row.size[1]}" />
+            </label>
+          </div>
+          <label>Color
+            <div class="light-row">
+              <input type="color" data-role="p-color" value="${hex}" aria-label="Particle color" />
+              <input type="range" min="0" max="1" step="0.05" data-role="p-alpha" value="${row.color[3]}" aria-label="Particle alpha" />
+            </div>
+          </label>
+          <label>Emission rate
+            <input type="number" min="0" step="0.5" data-role="p-rate" value="${row.emissionRate}" />
+          </label>
+          <label>Lifetime
+            <input type="number" min="0" step="0.1" data-role="p-life" value="${row.lifetime}" />
+          </label>
+          <label>Start speed
+            <input type="number" min="0" step="0.01" data-role="p-speed" value="${row.startSpeed}" />
+          </label>
+          <label>Max particles
+            <input type="number" min="1" step="1" data-role="p-max" value="${row.maxParticles}" />
+          </label>
+          <button type="button" data-role="p-remove">Remove emitter</button>
+        </div>
+      </details>`;
+    })
+    .join('');
+}
+
+async function commitParticle(details: HTMLDetailsElement): Promise<void> {
+  const index = Number(details.dataset.particleIndex);
+  const name = (details.querySelector('[data-role="p-name"]') as HTMLInputElement | null)?.value;
+  const node = Number(
+    (details.querySelector('[data-role="p-node"]') as HTMLSelectElement | null)?.value,
+  );
+  const texRaw = (details.querySelector('[data-role="p-texture"]') as HTMLSelectElement | null)
+    ?.value;
+  const w = Number((details.querySelector('[data-role="p-w"]') as HTMLInputElement | null)?.value);
+  const h = Number((details.querySelector('[data-role="p-h"]') as HTMLInputElement | null)?.value);
+  const hex = (details.querySelector('[data-role="p-color"]') as HTMLInputElement | null)?.value;
+  const alpha = Number(
+    (details.querySelector('[data-role="p-alpha"]') as HTMLInputElement | null)?.value,
+  );
+  const emissionRate = Number(
+    (details.querySelector('[data-role="p-rate"]') as HTMLInputElement | null)?.value,
+  );
+  const lifetime = Number(
+    (details.querySelector('[data-role="p-life"]') as HTMLInputElement | null)?.value,
+  );
+  const startSpeed = Number(
+    (details.querySelector('[data-role="p-speed"]') as HTMLInputElement | null)?.value,
+  );
+  const maxParticles = Number(
+    (details.querySelector('[data-role="p-max"]') as HTMLInputElement | null)?.value,
+  );
+  if (!hex || !Number.isFinite(node)) {
+    return;
+  }
+  const [r, g, b] = rgbFromHex(hex);
+  const texture = texRaw === '' || texRaw === undefined ? null : Number(texRaw);
+  const info = await viewer.setSpriteParticleEmitter(index, {
+    name: name ?? '',
+    node,
+    texture,
+    size: [w, h],
+    color: [r, g, b, alpha],
+    emissionRate,
+    lifetime,
+    startSpeed,
+    maxParticles,
+  });
+  if (info) {
+    applyStatus(info);
+  } else {
+    renderParticlePanel();
+  }
+}
+
+function defaultParticleNode(): number {
+  const nodes = viewer.getGltfNodes();
+  const hips = nodes.find((n) => n.name.toLowerCase() === 'hips');
+  return hips?.index ?? nodes[0]?.index ?? 0;
+}
+
 function renderStencilPanel(): void {
   const rows = viewer.getStencilMaterials();
   syncDownload();
@@ -362,6 +527,7 @@ function applyStatus(info: ViewerStatus): void {
   vrmxtEnabledEl.checked = info.vrmxtEnabled;
   statusEl.textContent = formatStatus(info);
   renderStencilPanel();
+  renderParticlePanel();
 }
 
 vrmxtEnabledEl.addEventListener('change', () => {
@@ -472,6 +638,62 @@ stencilRootEl.addEventListener('change', (e) => {
   }
 });
 
+particleRootEl.addEventListener('change', (e) => {
+  const target = e.target as HTMLInputElement;
+  const details = target.closest('details[data-particle-index]') as HTMLDetailsElement | null;
+  if (!details) {
+    return;
+  }
+  if (target.dataset.role === 'p-pack') {
+    const file = target.files?.[0];
+    target.value = '';
+    if (!file) {
+      return;
+    }
+    const index = Number(details.dataset.particleIndex);
+    void (async () => {
+      const info = await viewer.packSpriteParticleTexture(index, await file.arrayBuffer(), file.name);
+      if (info) {
+        applyStatus(info);
+      } else {
+        statusEl.textContent = 'Pack failed. Use a PNG or JPEG.';
+        renderParticlePanel();
+      }
+    })();
+    return;
+  }
+  void commitParticle(details);
+});
+
+particleRootEl.addEventListener('click', (e) => {
+  const target = e.target as HTMLElement;
+  if (target.dataset.role !== 'p-remove') {
+    return;
+  }
+  const details = target.closest('details[data-particle-index]') as HTMLDetailsElement | null;
+  if (!details) {
+    return;
+  }
+  const index = Number(details.dataset.particleIndex);
+  void (async () => {
+    const info = await viewer.removeSpriteParticleEmitter(index);
+    if (info) {
+      applyStatus(info);
+    } else {
+      renderParticlePanel();
+    }
+  })();
+});
+
+particleAddEl.addEventListener('click', () => {
+  void (async () => {
+    const info = await viewer.addSpriteParticleEmitter(defaultParticleNode());
+    if (info) {
+      applyStatus(info);
+    }
+  })();
+});
+
 downloadEl.addEventListener('click', () => {
   const bytes = viewer.exportGlb();
   const name = viewer.getSourceName();
@@ -488,4 +710,5 @@ downloadEl.addEventListener('click', () => {
 });
 
 renderStencilPanel();
+renderParticlePanel();
 void loadDefaultVrm();

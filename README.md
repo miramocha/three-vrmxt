@@ -9,7 +9,7 @@ This workspace ships an optional **peer** `GLTFLoader` plugin plus a first-party
 |------|------|-----|
 | `packages/three-vrmxt` | VRMXT / MToonXT attach beside `VRMLoaderPlugin` | `@vrmxt/three-vrmxt` (publishable) |
 | `packages/viewer-core` | Canvas, orbit, load-from-bytes | not published |
-| `apps/viewer` | Vite host: file picker, drag-drop, MToonXT stencil inspector, Download VRM. Live: [GitHub Pages](https://miramocha.github.io/three-vrmxt/) | not published |
+| `apps/viewer` | Vite host: file picker, drag-drop, MToonXT stencil + sprite particle inspector, Download VRM. Live: [GitHub Pages](https://miramocha.github.io/three-vrmxt/) | not published |
 
 ## Consumers
 
@@ -40,11 +40,12 @@ Hosted build: `https://miramocha.github.io/three-vrmxt/` (Actions on `main`). Lo
 First enable: repo **Settings → Pages → Source: GitHub Actions**.
 
 Viewer boots with `apps/viewer/public/stencil-cube.vrm`: cube face writers
-(Y front/back → sphere, X left/right → cone, Z top/bottom → torus). Drop
-another `.vrm` to replace it.
+(Y front/back → sphere, X left/right → cone, Z top/bottom → torus) plus
+`VRMXT_sprite_particle` emitters on hips, head, and hands. Drop another `.vrm`
+to replace it.
 
 Hub browser extension is still planned. `apps/viewer` edits and exports MToonXT
-stencil (JSON patch). Other `VRMXT_*` extras stay later.
+stencil (JSON patch). Sprite particles play on load; authoring stays in Blender.
 
 ## Specs
 
