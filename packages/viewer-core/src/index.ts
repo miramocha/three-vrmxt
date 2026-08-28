@@ -5,27 +5,46 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { ViewHelper } from 'three/addons/helpers/ViewHelper.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import {
+  addSpriteParticleEmitter,
+  appendImageToGlbBin,
   buildGlb,
   cloneJson,
+  listGltfNodes,
+  listGltfTextures,
+  listSpriteParticleEmitters,
   listStencilMaterials,
   parseGlb,
+  removeSpriteParticleEmitter,
   resetMtoonxtStencil,
   sanitizeMtoonxtStencils,
+  sanitizeSpriteParticles,
   setMaterialStencilExtras,
+  setSpriteParticleEmitter,
+  sniffImageMime,
   tryAttach,
+  disposeSpriteParticles,
   type GltfJson,
-  type MtoonxtAttachResult,
+  type GltfNodeOption,
+  type GltfTextureOption,
+  type GlbJsonForPack,
+  type ParticleGltfJson,
+  type SpriteParticlePatch,
+  type SpriteParticleRow,
   type StencilExtra,
   type StencilMaterialRow,
+  type VrmxtAttachResult,
+  type VrmxtSpriteParticleManager,
 } from '@vrmxt/three-vrmxt';
 
-export type { StencilExtra, StencilMaterialRow };
+export type { StencilExtra, StencilMaterialRow, SpriteParticleRow, GltfNodeOption, GltfTextureOption };
 
 export type ViewerStatus = {
   name: string;
   vrmxtEnabled: boolean;
   mtoonxtApplied: number;
   mtoonxtSkipped: number;
+  spriteParticleApplied: number;
+  spriteParticleSkipped: number;
 };
 
 export type ViewerLoadStage = 'parsing' | 'applying';
@@ -77,6 +96,20 @@ export type VrmxtViewer = {
     index: number,
     body: StencilExtra | null,
     outline: StencilExtra | null,
+  ) => Promise<ViewerStatus | null>;
+  getGltfNodes: () => GltfNodeOption[];
+  getGltfTextures: () => GltfTextureOption[];
+  getSpriteParticleEmitters: () => SpriteParticleRow[];
+  setSpriteParticleEmitter: (
+    index: number,
+    patch: SpriteParticlePatch,
+  ) => Promise<ViewerStatus | null>;
+  addSpriteParticleEmitter: (node?: number) => Promise<ViewerStatus | null>;
+  removeSpriteParticleEmitter: (index: number) => Promise<ViewerStatus | null>;
+  packSpriteParticleTexture: (
+    emitterIndex: number,
+    imageBytes: ArrayBuffer,
+    fileName: string,
   ) => Promise<ViewerStatus | null>;
   canExportGlb: () => boolean;
   exportGlb: () => ArrayBuffer | null;
@@ -252,6 +285,7 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
   let currentGltf: GLTF | null = null;
   let glbBin: Uint8Array | null | undefined;
   let vrmUpdate: ((delta: number) => void) | null = null;
+  let spriteParticles: VrmxtSpriteParticleManager | null = null;
   let vrmxtEnabled = true;
   let lastSource: { bytes: ArrayBuffer; name: string } | null = null;
   let loadGen = 0;
@@ -407,6 +441,7 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
   renderer.setAnimationLoop(() => {
     const delta = clock.getDelta();
     vrmUpdate?.(delta);
+    spriteParticles?.update(delta, camera);
     if (viewHelper.animating) {
       viewHelper.update(delta);
       if (!viewHelper.animating) {
@@ -462,13 +497,17 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     }
 
     const old = current;
+    const oldParticles = spriteParticles;
     scene.add(root);
     current = root;
     currentGltf = gltf;
     vrmUpdate = vrm ? (d) => vrm.update(d) : null;
+    const xt = gltf.userData.vrmxt as VrmxtAttachResult | undefined;
+    spriteParticles = xt?.spriteParticles ?? null;
     applyModelShadowFlags(root);
 
     if (old) {
+      oldParticles?.dispose();
       scene.remove(old);
       VRMUtils.deepDispose(old);
     }
@@ -478,7 +517,6 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     }
     fitShadowCamera(root);
 
-    const xt = gltf.userData.vrmxt as MtoonxtAttachResult | undefined;
     return {
       gen,
       status: {
@@ -486,6 +524,8 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
         vrmxtEnabled: attachXt,
         mtoonxtApplied: xt?.mtoonxtApplied ?? 0,
         mtoonxtSkipped: xt?.mtoonxtSkipped ?? 0,
+        spriteParticleApplied: xt?.spriteParticleApplied ?? 0,
+        spriteParticleSkipped: xt?.spriteParticleSkipped ?? 0,
       },
     };
   }
@@ -540,12 +580,15 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     return status;
   }
 
-  function attachStatus(name: string, attachXt: boolean, xt: MtoonxtAttachResult | undefined): ViewerStatus {
+  function attachStatus(name: string, attachXt: boolean, xt: VrmxtAttachResult | undefined): ViewerStatus {
+    spriteParticles = xt?.spriteParticles ?? null;
     return {
       name,
       vrmxtEnabled: attachXt,
       mtoonxtApplied: xt?.mtoonxtApplied ?? 0,
       mtoonxtSkipped: xt?.mtoonxtSkipped ?? 0,
+      spriteParticleApplied: xt?.spriteParticleApplied ?? 0,
+      spriteParticleSkipped: xt?.spriteParticleSkipped ?? 0,
     };
   }
 
@@ -576,9 +619,12 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
       return null;
     }
     resetMtoonxtStencil(currentGltf);
-    let xt: MtoonxtAttachResult | undefined;
+    spriteParticles = null;
+    let xt: VrmxtAttachResult | undefined;
     if (vrmxtEnabled) {
       xt = await tryAttach(currentGltf);
+    } else {
+      disposeSpriteParticles(currentGltf);
     }
     return attachStatus(name, vrmxtEnabled, xt);
   }
@@ -599,6 +645,108 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     return reapplyXt(lastSource.name);
   }
 
+  function particleJson(): ParticleGltfJson | null {
+    return gltfJson() as ParticleGltfJson | null;
+  }
+
+  function getGltfNodes(): GltfNodeOption[] {
+    const json = particleJson();
+    if (!json) {
+      return [];
+    }
+    return listGltfNodes(json);
+  }
+
+  function getGltfTextures(): GltfTextureOption[] {
+    const json = particleJson();
+    if (!json) {
+      return [];
+    }
+    return listGltfTextures(json);
+  }
+
+  function getSpriteParticleEmitters(): SpriteParticleRow[] {
+    const json = particleJson();
+    if (!json) {
+      return [];
+    }
+    return listSpriteParticleEmitters(json);
+  }
+
+  async function applyParticleJson(): Promise<ViewerStatus | null> {
+    if (!lastSource) {
+      return null;
+    }
+    syncSourceBytes();
+    return reapplyXt(lastSource.name);
+  }
+
+  async function patchSpriteParticleEmitter(
+    index: number,
+    patch: SpriteParticlePatch,
+  ): Promise<ViewerStatus | null> {
+    const json = particleJson();
+    if (!json || !lastSource) {
+      return null;
+    }
+    if (!setSpriteParticleEmitter(json, index, patch)) {
+      return null;
+    }
+    return applyParticleJson();
+  }
+
+  async function addSpriteParticle(node?: number): Promise<ViewerStatus | null> {
+    const json = particleJson();
+    if (!json || !lastSource) {
+      return null;
+    }
+    const attach = node ?? 0;
+    if (addSpriteParticleEmitter(json, attach) === null) {
+      return null;
+    }
+    return applyParticleJson();
+  }
+
+  async function removeSpriteParticle(index: number): Promise<ViewerStatus | null> {
+    const json = particleJson();
+    if (!json || !lastSource) {
+      return null;
+    }
+    if (!removeSpriteParticleEmitter(json, index)) {
+      return null;
+    }
+    return applyParticleJson();
+  }
+
+  async function packSpriteParticleTexture(
+    emitterIndex: number,
+    imageBytes: ArrayBuffer,
+    fileName: string,
+  ): Promise<ViewerStatus | null> {
+    const live = particleJson();
+    if (!live || !lastSource || glbBin === undefined) {
+      return null;
+    }
+    const json = cloneJson(live);
+    const data = new Uint8Array(imageBytes);
+    const mime = sniffImageMime(data);
+    if (!mime) {
+      return null;
+    }
+    const label = fileName.replace(/\.[^.]+$/u, '').trim() || 'sprite';
+    const packed = appendImageToGlbBin(json as GlbJsonForPack, glbBin, data, mime, label);
+    if (!setSpriteParticleEmitter(json, emitterIndex, { texture: packed.textureIndex })) {
+      return null;
+    }
+    const bytes = buildGlb(json, packed.bin);
+    const { status, gen } = await parseAndShow(bytes, lastSource.name, false, vrmxtEnabled);
+    commitIfCurrent(gen);
+    lastSource = { bytes: bytes.slice(0), name: lastSource.name };
+    const parts = parseGlb(lastSource.bytes);
+    glbBin = parts ? parts.bin : undefined;
+    return status;
+  }
+
   function canExportGlb(): boolean {
     return lastSource !== null && currentGltf !== null && glbBin !== undefined;
   }
@@ -610,6 +758,7 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     }
     const copy = cloneJson(json);
     sanitizeMtoonxtStencils(copy);
+    sanitizeSpriteParticles(copy as ParticleGltfJson);
     return buildGlb(copy, glbBin);
   }
 
@@ -618,6 +767,8 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
   }
 
   function dispose(): void {
+    spriteParticles?.dispose();
+    spriteParticles = null;
     renderer.setAnimationLoop(null);
     window.removeEventListener('resize', resize);
     viewHelperHost.removeEventListener('pointerdown', onHelperPointerDown);
@@ -645,6 +796,13 @@ export function createVrmxtViewer(canvas: HTMLCanvasElement): VrmxtViewer {
     setShadows,
     getStencilMaterials,
     setMaterialStencil,
+    getGltfNodes,
+    getGltfTextures,
+    getSpriteParticleEmitters,
+    setSpriteParticleEmitter: patchSpriteParticleEmitter,
+    addSpriteParticleEmitter: addSpriteParticle,
+    removeSpriteParticleEmitter: removeSpriteParticle,
+    packSpriteParticleTexture,
     canExportGlb,
     exportGlb,
     getSourceName,

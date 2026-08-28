@@ -23,9 +23,21 @@ describe('tryAttach', () => {
   it('no-ops when VRMXT_materials_mtoonxt is unused', async () => {
     const gltf = fakeGltf({ extensionsUsed: ['VRMC_materials_mtoon'], materials: [{}] });
     const result = await tryAttach(gltf);
-    expect(result).toEqual({ mtoonxtApplied: 0, mtoonxtSkipped: 0 });
+    expect(result).toEqual({
+      mtoonxtApplied: 0,
+      mtoonxtSkipped: 0,
+      spriteParticleApplied: 0,
+      spriteParticleSkipped: 0,
+      spriteParticles: null,
+    });
     expect(applyMtoonxtStencil).not.toHaveBeenCalled();
-    expect(gltf.userData.vrmxt).toEqual({ mtoonxtApplied: 0, mtoonxtSkipped: 0 });
+    expect(gltf.userData.vrmxt).toEqual({
+      mtoonxtApplied: 0,
+      mtoonxtSkipped: 0,
+      spriteParticleApplied: 0,
+      spriteParticleSkipped: 0,
+      spriteParticles: null,
+    });
   });
 
   it('no-ops when extensionsUsed is missing', async () => {
@@ -41,6 +53,12 @@ describe('tryAttach', () => {
     });
     const result = await tryAttach(gltf);
     expect(applyMtoonxtStencil).toHaveBeenCalledOnce();
-    expect(result).toEqual({ mtoonxtApplied: 3, mtoonxtSkipped: 1 });
+    expect(result).toEqual({
+      mtoonxtApplied: 3,
+      mtoonxtSkipped: 1,
+      spriteParticleApplied: 0,
+      spriteParticleSkipped: 0,
+      spriteParticles: null,
+    });
   });
 });

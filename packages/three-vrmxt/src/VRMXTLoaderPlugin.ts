@@ -20,4 +20,4 @@ export class VRMXTLoaderPlugin implements GLTFLoaderPlugin {
 
 export { tryAttach };
 export { applyMtoonxtStencil } from './mtoonxt/applyMtoonxtStencil.js';
-export type { MtoonxtAttachResult } from './tryAttach.js';
+export type { MtoonxtAttachResult, VrmxtAttachResult } from './tryAttach.js';
